@@ -213,6 +213,14 @@ class Store:
             )
         return self.get(jid)
 
+    def record_event(self, jid: str, kind: str, detail: dict) -> None:
+        job = self.get(jid)
+        with self.connect() as con:
+            con.execute(
+                "INSERT INTO events(job_id,at,kind,from_state,to_state,detail) VALUES(?,?,?,?,?,?)",
+                (jid, now(), kind, job["state"], job["state"], json.dumps(detail)),
+            )
+
     def attach_pr(self, jid: str, pr: int) -> dict:
         ts = now()
         job = self.get(jid)

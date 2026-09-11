@@ -1,0 +1,25 @@
+{
+  "name": "nemosyne-pr-write-v0.2",
+  "repository": "TsatsuAmable/nemosyne",
+  "check_timeout_seconds": 1200,
+  "blocked_paths": [
+    ".github",
+    "governance",
+    "AGENTS.md",
+    "docs/ROADMAP.md",
+    "docs/RFC_PROCESS.md",
+    "package.json",
+    "package-lock.json",
+    "Cargo.toml",
+    "Cargo.lock"
+  ],
+  "checks": {
+    "typecheck": ["npm", "run", "typecheck"],
+    "docs-check": ["npm", "run", "docs:check"],
+    "xr-calibration": [
+      "npm", "run", "test:integration", "--",
+      "tests/ui-system/xr-experimental-profiles.test.ts",
+      "tests/ui-system/xr-evidence-calibration.test.ts"
+    ]
+  }
+}
