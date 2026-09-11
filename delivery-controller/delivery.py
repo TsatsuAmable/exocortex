@@ -249,8 +249,14 @@ class GitHub:
         data = json.loads(cp.stdout)
         failed, pending = [], []
         rollup = data.get("statusCheckRollup") or []
-        for check in rollup:
+        latest_by_name = {}
+        for index, check in enumerate(rollup):
             name = check.get("name") or check.get("context") or "unnamed-check"
+            stamp = check.get("startedAt") or check.get("completedAt") or ""
+            previous = latest_by_name.get(name)
+            if previous is None or (stamp, index) >= previous[0]:
+                latest_by_name[name] = ((stamp, index), check)
+        for name, (_, check) in latest_by_name.items():
             state = (check.get("conclusion") or check.get("state") or check.get("status") or "").upper()
             if state in FAIL_CHECKS:
                 failed.append(name)

@@ -53,6 +53,25 @@ class DeliveryControllerTests(unittest.TestCase):
         self.assertEqual(job["state"], "MERGE_GATE")
         self.assertIn("never auto-merges", job["next_action"])
 
+
+    def test_latest_duplicate_check_supersedes_old_failure(self):
+        import json
+        from unittest.mock import patch
+        from delivery import GitHub
+        payload = {
+            "state": "OPEN", "mergedAt": None, "mergeStateStatus": "BLOCKED",
+            "reviewDecision": "", "url": "https://example/pr/10",
+            "statusCheckRollup": [
+                {"name": "approval-gate", "status": "COMPLETED", "conclusion": "FAILURE", "startedAt": "2026-09-11T01:25:09Z"},
+                {"name": "approval-gate", "status": "COMPLETED", "conclusion": "SUCCESS", "startedAt": "2026-09-11T01:25:52Z"},
+            ],
+        }
+        completed = type("CP", (), {"returncode": 0, "stdout": json.dumps(payload), "stderr": ""})()
+        with patch("delivery.subprocess.run", return_value=completed):
+            obs = GitHub().observe_pr("o/r", 10)
+        self.assertEqual(obs.checks, "green")
+        self.assertEqual(obs.failed_checks, [])
+
     def test_merged_pr_is_observed(self):
         jid = self.store.submit("o/r", "fix", "observe", "none", 9, self.goms)
         obs = PrObservation(True, False, "green", [], [], "APPROVED", "CLEAN", "https://example/pr/9")
