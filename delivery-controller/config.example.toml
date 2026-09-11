@@ -1,0 +1,15 @@
+[controller]
+poll_seconds = 300
+max_jobs_per_tick = 8
+
+[policy]
+default_authority = "observe"
+# observe -> inspect only
+# pr      -> future implementation/PR actions may be enabled
+# staging -> future staging actions may be enabled
+# production -> production remains separately gated
+
+[provider]
+# Model selection is intentionally external to the controller.
+# Supported in v0.1: "none", "local-dispatch"
+kind = "none"

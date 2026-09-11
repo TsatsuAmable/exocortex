@@ -1,0 +1,14 @@
+.DS_Store
+**/__pycache__/
+**/.venv/
+*.pyc
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+*.lock
+logs/
+local-ai/results/
+compute/model-routing/results*.jsonl
+resource-stewardship/health-*.txt
+resource-stewardship/latest.txt
