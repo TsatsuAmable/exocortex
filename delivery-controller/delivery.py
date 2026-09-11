@@ -14,7 +14,11 @@ from pathlib import Path
 from typing import Protocol
 
 ROOT = Path(__file__).resolve().parent
-DB_PATH = Path(os.environ.get("AINEKO_DELIVERY_DB", ROOT / "delivery.sqlite3"))
+if sys.platform == "darwin":
+    DEFAULT_STATE_DIR = Path.home() / "Library" / "Application Support" / "Aineko" / "delivery-controller"
+else:
+    DEFAULT_STATE_DIR = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state")) / "aineko" / "delivery-controller"
+DB_PATH = Path(os.environ.get("AINEKO_DELIVERY_DB", DEFAULT_STATE_DIR / "delivery.sqlite3"))
 GOMS_ROOT = ROOT.parent / "goms-v2"
 LOCAL_DISPATCH = ROOT.parent / "local-ai" / "dispatch.py"
 
