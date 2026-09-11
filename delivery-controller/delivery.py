@@ -20,7 +20,7 @@ LOCAL_DISPATCH = ROOT.parent / "local-ai" / "dispatch.py"
 
 STATES = {
     "CREATED", "PLANNING", "IMPLEMENTING", "LOCAL_VERIFY", "PR_OPEN",
-    "WAIT_CI", "WAIT_REVIEW", "MERGE_GATE", "MERGED", "DEPLOY_STAGING",
+    "WAIT_CI", "WAIT_APPROVAL", "WAIT_REVIEW", "MERGE_GATE", "MERGED", "DEPLOY_STAGING",
     "VERIFY_STAGING", "PRODUCTION_GATE", "DEPLOY_PRODUCTION",
     "VERIFY_PRODUCTION", "COMPLETE", "BLOCKED", "FAILED", "ABORTED",
 }
@@ -28,6 +28,7 @@ TERMINAL_STATES = {"COMPLETE", "FAILED", "ABORTED"}
 ACTIVE_STATES = STATES - TERMINAL_STATES
 FAIL_CHECKS = {"FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STALE"}
 PENDING_CHECKS = {"PENDING", "QUEUED", "IN_PROGRESS", "EXPECTED", "WAITING", "REQUESTED"}
+HUMAN_GATE_CHECKS = {"approval-gate"}
 
 
 def now() -> str:
@@ -116,7 +117,7 @@ class GomsBridge:
             return "CONCLUDED"
         if state == "BLOCKED":
             return "BLOCKED"
-        if state in {"WAIT_CI", "WAIT_REVIEW"}:
+        if state in {"WAIT_CI", "WAIT_APPROVAL", "WAIT_REVIEW"}:
             return "DELEGATED"
         return "ACTIVE"
 
@@ -291,6 +292,12 @@ class Controller:
             target, reason, nxt = "MERGED", f"PR merged: {obs.url}", "Observe deployment or mark complete"
         elif obs.closed:
             target, reason, nxt = "ABORTED", f"PR closed without merge: {obs.url}", ""
+        elif obs.checks == "failed" and obs.failed_checks and all(
+            name.lower() in HUMAN_GATE_CHECKS for name in obs.failed_checks
+        ):
+            target = "WAIT_APPROVAL"
+            reason = "Human/policy gate pending: " + ", ".join(obs.failed_checks)
+            nxt = "Provide exact-head approval/promotion evidence; controller remains observe-only"
         elif obs.checks == "failed":
             target = "WAIT_CI"
             reason = "CI failures: " + ", ".join(obs.failed_checks)

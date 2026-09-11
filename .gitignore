@@ -12,3 +12,5 @@ local-ai/results/
 compute/model-routing/results*.jsonl
 resource-stewardship/health-*.txt
 resource-stewardship/latest.txt
+*.sqlite3-shm
+*.sqlite3-wal

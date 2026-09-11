@@ -37,6 +37,14 @@ class DeliveryControllerTests(unittest.TestCase):
         self.assertEqual(job["state"], "WAIT_CI")
         self.assertIn("unit", job["last_result"])
 
+    def test_approval_gate_waits_for_human_policy_evidence(self):
+        jid = self.store.submit("o/r", "fix", "observe", "none", 10, self.goms)
+        obs = PrObservation(False, False, "failed", ["approval-gate"], [], "", "BLOCKED", "https://example/pr/10")
+        Controller(self.store, self.goms, FakeGitHub(obs)).tick(jid)
+        job = self.store.get(jid)
+        self.assertEqual(job["state"], "WAIT_APPROVAL")
+        self.assertIn("observe-only", job["next_action"])
+
     def test_green_pr_stops_at_merge_gate(self):
         jid = self.store.submit("o/r", "fix", "observe", "none", 8, self.goms)
         obs = PrObservation(False, False, "green", [], [], "APPROVED", "CLEAN", "https://example/pr/8")
