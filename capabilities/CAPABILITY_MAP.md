@@ -51,7 +51,7 @@ Memory: 16 GB
 - Local language worker: `aineko-worker:v0.3` based on Qwen3.5 9B, 8K working context, ~20.6 tok/s observed, regression-gated prompt policy.
 - Local worker dispatcher/provenance: `~/Documents/aineko-infrastructure/local-ai/dispatch.py` + JSONL result log.
 - Resource stewardship: health checks and policy under `~/Documents/aineko-infrastructure/resource-stewardship`.
-- Durable delivery controller v0.1: `~/Documents/aineko-infrastructure/delivery-controller`; model-agnostic SQLite state machine, GitHub PR/CI observation, GOMS checkpoints, and a dormant `launchd` scheduler template. Observe-only until evidence justifies greater authority.
+- Durable delivery controller v0.2: `~/Documents/aineko-infrastructure/delivery-controller`; pilot #1 completed end-to-end on Nemosyne PR #707 through production. Adds model-agnostic durable state, GitHub PR/CI observation, GOMS checkpoints, isolated worktrees, typed verification, path policy, and race-safe non-force PR push authority. Merge/deployment authority remains disabled.
 
 ## Coordination
 - Desktop Commander provides authorised terminal/filesystem access.

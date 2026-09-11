@@ -17,7 +17,7 @@ Finish shared capability infrastructure before allowing project branches to mult
    - Depends on GOMS MCP.
    - Detect branch/fork/park/conclude/delegate transitions.
    - Produce compact project-state packets on demand.
-   - Delivery-controller v0.1 now provides a durable model-agnostic software-delivery state machine, GitHub PR/CI observation, and GOMS checkpoints; scheduler remains intentionally uninstalled until a real job justifies it.
+   - Delivery-controller v0.2: pilot #1 completed on Nemosyne PR #707 through successful production deployment; launchd observation is active. Pilot exposed/fixed approval-gate classification, stale duplicate-check handling, and an XR evidence-kind validation defect. Bounded isolated-worktree patch/push authority is implemented and tested but remains dormant until a real PR needs it; merge/deployment authority stays disabled.
 
 3. **Resource stewardship** — ACTIVE
    - Independent foundation for worker scheduling.
