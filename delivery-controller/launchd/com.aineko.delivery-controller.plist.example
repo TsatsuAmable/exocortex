@@ -6,8 +6,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>/opt/homebrew/bin/python3</string>
-    <string>/Users/tsatsuamable/Library/Application Support/Aineko/delivery-controller/delivery.py</string>
-    <string>tick</string>
+    <string>/Users/tsatsuamable/Library/Application Support/Aineko/delivery-controller/tick_all.py</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict><key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
