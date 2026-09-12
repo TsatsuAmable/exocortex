@@ -19,8 +19,9 @@ import sys
 import time
 
 HOME = Path.home()
-MAIN = Path(os.getenv("NEMOSYNE_MAIN", HOME / "Documents/nemosyne"))
-XR = Path(os.getenv("NEMOSYNE_XR_WORKTREE", HOME / "Documents/nemosyne-xr-adversarial"))
+WORKSPACE = HOME / "Library/Application Support/Aineko/workspaces"
+MAIN = Path(os.getenv("NEMOSYNE_MAIN", WORKSPACE / "nemosyne-supervised-main"))
+XR = Path(os.getenv("NEMOSYNE_XR_WORKTREE", WORKSPACE / "nemosyne-supervised"))
 EVIDENCE = Path(os.getenv("NEMOSYNE_CONTINUOUS_EVIDENCE", HOME / "Library/Application Support/Aineko/evidence/nemosyne/continuous"))
 STATE = EVIDENCE / "state.json"
 EVENTS = EVIDENCE / "events.ndjson"
@@ -65,14 +66,45 @@ def emit(kind: str, **detail) -> None:
     os.chmod(EVENTS, 0o600)
 
 
+def clip_output(text: str, limit: int = 12000) -> str:
+    if len(text) <= limit:
+        return text
+    head = 4000
+    tail = limit - head
+    return text[:head] + '\n...[truncated]...\n' + text[-tail:]
+
+
 def run(args: list[str], cwd: Path, timeout: int = 180, env: dict | None = None) -> dict:
+    """Run one bounded command and own its whole descendant process group."""
     started = time.time()
+    process = None
     try:
-        cp = subprocess.run(args, cwd=cwd, text=True, capture_output=True, timeout=timeout, env=env)
-        return {'ok': cp.returncode == 0, 'code': cp.returncode,
+        process = subprocess.Popen(
+            args, cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env=env, start_new_session=True,
+        )
+        stdout, stderr = process.communicate(timeout=timeout)
+        return {'ok': process.returncode == 0, 'code': process.returncode,
                 'seconds': round(time.time() - started, 3),
-                'stdout': cp.stdout[-12000:], 'stderr': cp.stderr[-12000:]}
+                'stdout': clip_output(stdout), 'stderr': clip_output(stderr)}
+    except subprocess.TimeoutExpired:
+        if process is not None:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            stdout, stderr = process.communicate(timeout=5)
+        else:
+            stdout, stderr = '', ''
+        return {'ok': False, 'code': None, 'seconds': round(time.time() - started, 3),
+                'stdout': clip_output(stdout or ''),
+                'stderr': clip_output((stderr or '') + f'\nTIMEOUT after {timeout}s; process group terminated')}
     except Exception as exc:
+        if process is not None and process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
         return {'ok': False, 'code': None, 'seconds': round(time.time() - started, 3),
                 'stdout': '', 'stderr': str(exc)}
 
@@ -97,21 +129,27 @@ def record_lane(state: dict, key: str, sha: str | None, result: dict, extra: dic
 
 
 def adb_snapshot() -> dict:
-    listing = run([str(ADB), 'devices', '-l'], MAIN, 20)
+    listing = run([str(ADB), 'devices', '-l'], MAIN, 5)
     devices = [line for line in listing['stdout'].splitlines()[1:] if len(line.split()) >= 2 and line.split()[1] == 'device']
     if not devices:
         return {'connected': False, 'devices': [], 'awake': False, 'browserPid': None}
     serial = devices[0].split()[0]
-    wake = run([str(ADB), '-s', serial, 'shell', 'dumpsys', 'power'], MAIN, 20)
-    browser = run([str(ADB), '-s', serial, 'shell', 'pidof', 'com.oculus.browser'], MAIN, 20)
-    identity_env = os.environ.copy()
-    identity_env['PATH'] = f"{ADB.parent}:{identity_env.get('PATH', '')}"
-    identity_env['NEMOSYNE_QUEST_ADB_SERIAL'] = serial
-    identity = run(['node', 'scripts/quest-device-declaration.mjs', 'probe'], MAIN, 30, identity_env)
+    wake = run([str(ADB), '-s', serial, 'shell', 'dumpsys', 'power'], MAIN, 5)
+    browser = run([str(ADB), '-s', serial, 'shell', 'pidof', 'com.oculus.browser'], MAIN, 5)
+    props = {}
+    for field, prop in {
+        'model': 'ro.product.model',
+        'buildIncremental': 'ro.build.version.incremental',
+        'buildFingerprint': 'ro.build.fingerprint',
+        'securityPatch': 'ro.build.version.security_patch',
+    }.items():
+        value = run([str(ADB), '-s', serial, 'shell', 'getprop', prop], MAIN, 4)
+        props[field] = value['stdout'].strip() if value['ok'] else None
+    identity_ok = bool(props['model'] and props['buildIncremental'] and props['buildFingerprint'])
     return {'connected': True, 'devices': devices, 'serialHash': hashlib.sha256(serial.encode()).hexdigest()[:12],
             'awake': 'Wakefulness: Awake' in wake['stdout'] or 'mWakefulness=Awake' in wake['stdout'],
             'browserPid': browser['stdout'].strip() or None,
-            'identityOk': identity['ok'], 'identity': identity['stdout'][-2000:] if identity['ok'] else None}
+            'identityOk': identity_ok, 'identity': props if identity_ok else None}
 
 
 
@@ -179,20 +217,54 @@ def parse_probe(result: dict) -> dict | None:
 
 
 def launch_quest_page() -> None:
-    listing = run([str(ADB), 'devices'], XR, 20)
-    serials = [line.split()[0] for line in listing['stdout'].splitlines()[1:] if len(line.split()) >= 2 and line.split()[1] == 'device']
+    listing = run([str(ADB), 'devices'], XR, 10)
+    serials = [line.split()[0] for line in listing['stdout'].splitlines()[1:]
+               if len(line.split()) >= 2 and line.split()[1] == 'device']
     if len(serials) != 1:
         return
-    run([str(ADB), '-s', serials[0], 'shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d',
-         f'http://localhost:{QUEST_APP_PORT}/'], XR, 30)
-    time.sleep(1.5)
+    run([
+        str(ADB), '-s', serials[0], 'shell', 'am', 'start',
+        '-a', 'android.intent.action.VIEW',
+        '-c', 'com.oculus.intent.category.VR_HOME_LAUNCHER',
+        '-d', f'http://localhost:{QUEST_APP_PORT}/',
+        '-n', 'com.oculus.browser/.OculusLauncherActivity',
+    ], XR, 20)
+    time.sleep(2.0)
 
 
-def run_physical_probe(reload_page: bool = False) -> tuple[dict, dict | None]:
+def quest_presence(serial: str, worn: bool) -> dict:
+    action = 'com.oculus.vrpowermanager.prox_close' if worn else 'com.oculus.vrpowermanager.prox_far'
+    return run([str(ADB), '-s', serial, 'shell', 'am', 'broadcast', '-a', action], XR, 8)
+
+
+def refocus_quest_browser(serial: str) -> dict:
+    return run([
+        str(ADB), '-s', serial, 'shell', 'am', 'start',
+        '-a', 'android.intent.action.MAIN',
+        '-c', 'com.oculus.intent.category.VR_HOME_LAUNCHER',
+        '-n', 'com.oculus.browser/.OculusLauncherActivity',
+    ], XR, 15)
+
+
+def recover_quest_browser(serial: str) -> None:
+    """Bounded recovery for a wedged Browser/DevTools lifecycle during a presence lease."""
+    run([str(ADB), '-s', serial, 'shell', 'am', 'force-stop', 'com.oculus.browser'], XR, 8)
+    time.sleep(0.5)
+    launch_quest_page()
+    run([str(ADB), '-s', serial, 'forward', 'tcp:9222', 'localabstract:chrome_devtools_remote'], XR, 8)
+    time.sleep(2.0)
+
+
+def run_physical_probe(reload_page: bool = False, immersive_smoke: bool = False) -> tuple[dict, dict | None]:
     args = ['node', str(QUEST_PROBE)]
     if reload_page:
         args.append('--reload')
-    result = run(args, XR, 90)
+    if immersive_smoke:
+        args.append('--immersive-smoke')
+    # Node can block in getcwd() under launchd when started inside an active Git worktree.
+    # The probe resolves repository paths from import.meta, so use a neutral runtime CWD.
+    neutral_cwd = EVIDENCE if EVIDENCE.exists() else Path('/tmp')
+    result = run(args, neutral_cwd, 30 if immersive_smoke else 12)
     return result, parse_probe(result)
 
 
@@ -208,6 +280,29 @@ def persist_physical(payload: dict) -> None:
 
 
 def physical_lane(state: dict, hardware: dict, target_sha: str | None) -> None:
+    """Run one bounded unattended Quest trial and always restore proximity state."""
+    devices = hardware.get('devices') or []
+    if not hardware.get('connected') or len(devices) != 1:
+        return
+    serial = devices[0].split()[0]
+    presence = quest_presence(serial, True)
+    if not presence.get('ok'):
+        state['physicalAvailability'] = {
+            'at': now(), 'sha': target_sha, 'available': False, 'reason': 'presence-lease-failed',
+        }
+        emit('physical_skipped', **state['physicalAvailability'])
+        return
+    try:
+        run([str(ADB), '-s', serial, 'shell', 'input', 'keyevent', 'KEYCODE_WAKEUP'], XR, 5)
+        refocus_quest_browser(serial)
+        time.sleep(1.0)
+        _physical_lane_active(state, hardware, target_sha)
+    finally:
+        quest_presence(serial, False)
+        emit('quest_presence_restored', serialHash=hardware.get('serialHash'))
+
+
+def _physical_lane_active(state: dict, hardware: dict, target_sha: str | None) -> None:
     if not hardware.get('connected') or not QUEST_PROBE.exists():
         return
     listener = listener_info()
@@ -219,6 +314,12 @@ def physical_lane(state: dict, hardware: dict, target_sha: str | None) -> None:
         return
 
     result, payload = run_physical_probe(False)
+    if payload is None:
+        devices = hardware.get('devices') or []
+        if len(devices) == 1:
+            serial = devices[0].split()[0]
+            recover_quest_browser(serial)
+            result, payload = run_physical_probe(False)
     reasons = ((payload or {}).get('attribution') or {}).get('reasons') or []
     stale_server = 'served build does not match worktree HEAD' in reasons
     stale_page = any(reason.startswith('running Quest page ') for reason in reasons)
@@ -234,6 +335,24 @@ def physical_lane(state: dict, hardware: dict, target_sha: str | None) -> None:
     elif no_page:
         launch_quest_page()
         result, payload = run_physical_probe(False)
+
+    state['physicalAvailability'] = {
+        'at': now(), 'sha': target_sha, 'available': True, 'reason': 'bounded-quest-presence-lease',
+    }
+
+    runtime_before = (payload or {}).get('runtime') or {}
+    attribution_before = (payload or {}).get('attribution') or {}
+    if (
+        result.get('ok')
+        and attribution_before.get('ok')
+        and runtime_before.get('vrButton') == 'ENTER VR'
+        and runtime_before.get('immersiveVrSupported') is True
+        and runtime_before.get('visibilityState') == 'visible'
+        and runtime_before.get('hasFocus') is True
+    ):
+        smoke_result, smoke_payload = run_physical_probe(False, True)
+        if smoke_payload is not None:
+            result, payload = smoke_result, smoke_payload
 
     extra = {}
     if payload:
@@ -253,14 +372,27 @@ def physical_lane(state: dict, hardware: dict, target_sha: str | None) -> None:
             'usedJsHeapBytes': runtime.get('usedJsHeapBytes'),
             'immersiveVrSupported': runtime.get('immersiveVrSupported'),
             'vrButton': runtime.get('vrButton'),
+            'immersiveAttempted': bool((payload.get('immersive') or {}).get('attempted')),
+            'immersiveEntered': (payload.get('immersive') or {}).get('entered'),
+            'immersiveCleanedUp': (payload.get('immersive') or {}).get('cleanedUp'),
         }
     record_lane(state, 'physical', target_sha, result, extra)
 
-    if result.get('ok') and payload:
+    if payload and (payload.get('attribution') or {}).get('ok'):
         runtime = payload.get('runtime') or {}
+        sha_note = target_sha or 'unknown-head'
         if runtime.get('immersiveVrSupported') is False:
             submit_packet('Investigate physical Quest WebXR availability regression',
-                          'An exact-head physical Quest Browser probe reported immersive-vr unavailable; reproduce before changing product behavior.',
+                          f'Exact head {sha_note} reported immersive-vr unavailable on Quest; reproduce before changing product behavior.',
+                          str(PHYSICAL_LATEST), state)
+        immersive = payload.get('immersive') or {}
+        if immersive.get('attempted') is True and immersive.get('entered') is not True:
+            submit_packet('Investigate physical Quest immersive XR smoke failure',
+                          f'Exact head {sha_note} failed to enter immersive WebXR under the bounded physical smoke; preserve and reproduce the hardware evidence.',
+                          str(PHYSICAL_LATEST), state)
+        if immersive.get('entered') is True and immersive.get('cleanedUp') is not True:
+            submit_packet('Repair physical Quest immersive lifecycle recovery',
+                          f'Exact head {sha_note} entered immersive WebXR but did not end the session and recover the Browser task cleanly.',
                           str(PHYSICAL_LATEST), state)
 
 def submit_packet(title: str, objective: str, evidence_ref: str, state: dict) -> None:
@@ -309,10 +441,17 @@ def tick() -> dict:
         emit('hardware_heartbeat', **hardware)
 
         if due(state, 'physical', PHYSICAL_INTERVAL, xr_sha):
-            physical_lane(state, hardware, xr_sha)
+            if hardware.get('connected'):
+                physical_lane(state, hardware, xr_sha)
+            else:
+                state['physicalAvailability'] = {
+                    'at': now(), 'sha': xr_sha, 'available': False,
+                    'reason': 'device-disconnected',
+                }
+                emit('physical_skipped', **state['physicalAvailability'])
 
         if due(state, 'moneta', MONETA_INTERVAL, main_sha):
-            result = run(['npm', 'run', 'experiment:moneta-known-structure'], MAIN, 300)
+            result = run(['npm', 'run', 'experiment:moneta-known-structure'], MAIN, 60)
             record_lane(state, 'moneta', main_sha, result)
             if not result['ok']:
                 submit_packet('Repair continuous Moneta known-structure campaign',
@@ -323,7 +462,7 @@ def tick() -> dict:
         campaign_sha = git_sha(campaign_root)
         simulator_ran = False
         if due(state, 'simulator', SIM_INTERVAL, campaign_sha):
-            result = run(['npm', 'run', 'experiment:xr-adversarial'], campaign_root, 600)
+            result = run(['npm', 'run', 'experiment:xr-adversarial'], campaign_root, 90)
             record_lane(state, 'simulator', campaign_sha, result)
             simulator_ran = True
             if not result['ok']:
@@ -334,7 +473,7 @@ def tick() -> dict:
         semantic_script = campaign_root / 'scripts/run-xr-moneta-semantic-campaign.mjs'
         semantic_ran = False
         if semantic_script.exists() and due(state, 'semantic', SEMANTIC_INTERVAL, campaign_sha):
-            result = run(['npm', 'run', 'experiment:xr-moneta-semantic'], campaign_root, 600)
+            result = run(['npm', 'run', 'experiment:xr-moneta-semantic'], campaign_root, 60)
             record_lane(state, 'semantic', campaign_sha, result)
             semantic_ran = True
             if result['ok']:
