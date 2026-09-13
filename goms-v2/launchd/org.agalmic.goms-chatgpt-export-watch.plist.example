@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>org.agalmic.goms-chatgpt-export-watch</string>
+<key>ProgramArguments</key><array>
+<string>/usr/bin/python3</string>
+<string>${HOME}/Library/Application Support/Aineko/GOMS/chatgpt_export_watch.py</string>
+</array>
+<key>EnvironmentVariables</key><dict>
+<key>GOMS_HOME</key><string>${HOME}/Library/Application Support/Aineko/GOMS</string>
+</dict>
+<key>StartInterval</key><integer>60</integer>
+<key>RunAtLoad</key><true/>
+<key>StandardOutPath</key><string>${HOME}/Library/Logs/Aineko/chatgpt-export-watch.log</string>
+<key>StandardErrorPath</key><string>${HOME}/Library/Logs/Aineko/chatgpt-export-watch.err.log</string>
+</dict></plist>

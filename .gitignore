@@ -14,3 +14,11 @@ resource-stewardship/health-*.txt
 resource-stewardship/latest.txt
 *.sqlite3-shm
 *.sqlite3-wal
+
+# GOMS runtime state / generated evidence
+goms-v2/events.jsonl
+goms-v2/*_state.json
+goms-v2/*heartbeat*.json
+goms-v2/distillation_gold.json
+
+!goms-v2/uv.lock

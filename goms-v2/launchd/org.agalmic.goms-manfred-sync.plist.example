@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>org.agalmic.goms-manfred-sync</string>
+<key>ProgramArguments</key><array>
+<string>/usr/bin/python3</string>
+<string>${HOME}/Library/Application Support/Aineko/GOMS/manfred_sync.py</string>
+<string>--base-url</string><string>http://MANFRED_HOST:8792</string>
+</array>
+<key>EnvironmentVariables</key><dict>
+<key>GOMS_HOME</key><string>${HOME}/Library/Application Support/Aineko/GOMS</string>
+</dict>
+<key>StartInterval</key><integer>15</integer>
+<key>RunAtLoad</key><true/>
+<key>StandardOutPath</key><string>${HOME}/Library/Logs/Aineko/goms-manfred-sync.log</string>
+<key>StandardErrorPath</key><string>${HOME}/Library/Logs/Aineko/goms-manfred-sync.err.log</string>
+</dict></plist>
