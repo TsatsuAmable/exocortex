@@ -3,6 +3,8 @@ import fcntl, hashlib, json, sqlite3, urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+from distillation_policy import build_extraction_prompt, canonicalize_kind, reap_stale_runs
+
 ROOT=Path.home()/"Library/Application Support/Aineko/GOMS"
 DB=ROOT/"goms.sqlite3"
 LOCK=ROOT/"distillation.lock"
@@ -26,34 +28,7 @@ def call(prompt):
     with urllib.request.urlopen(req,timeout=105) as r:
         return json.load(r)
 
-SCHEMA='''Extract durable semantic state from these USER messages.
-Ignore acknowledgements and transient chatter.
-Return strict JSON: {"items":[...]}.
-Each item must contain:
-kind, subject, predicate, object, literal, confidence, evidence_ids.
-kind must be one of:
-objective, decision, task, scarcity, capability, constraint,
-preference, outcome, adjacent_possible, proposal, principle, question.
-
-Definitions:
-- objective: enduring desired state/outcome.
-- decision: committed choice or accepted change.
-- task: concrete action that should be executed.
-- scarcity: limiting resource or bottleneck.
-- capability: reusable ability, tool, resource, or mechanism.
-- constraint: requirement or boundary on acceptable action.
-- preference: stable user preference, priority, or style.
-- outcome: observed result or completed state change.
-- adjacent_possible: newly reachable future state enabled by capability/state change.
-- proposal: candidate change not yet accepted.
-- principle: durable architectural/governance rule or framing.
-- question: unresolved question whose answer materially affects work.
-
-Do not turn speculative questions into decisions.
-Do not extract one-off content-generation requests as durable state unless they belong to an ongoing project.
-Only include claims directly supported by cited evidence IDs.
-Do not invent completion. confidence <= 0.98.
-Prefer durable, reusable state over conversational detail.'''
+SCHEMA=build_extraction_prompt()
 
 with LOCK.open("w") as lf:
     try:
@@ -71,6 +46,10 @@ with LOCK.open("w") as lf:
           id TEXT PRIMARY KEY,run_id TEXT,kind TEXT,subject TEXT,predicate TEXT,
           object TEXT,literal TEXT,confidence REAL,evidence_ids TEXT,
           status TEXT DEFAULT 'candidate',created_at TEXT);""")
+
+        abandoned = reap_stale_runs(c)
+        if abandoned:
+            c.commit()
 
         rows=c.execute("""select id,summary from entities
           where type='evidence' and tags like '%"user"%'
@@ -107,13 +86,10 @@ with LOCK.open("w") as lf:
                 ev=[e for e in x.get("evidence_ids",[]) if e in valid]
                 if not ev:
                     continue
-                kind=str(x.get("kind",""))
-                if kind not in {
-                    "objective","decision","task","scarcity","capability",
-                    "constraint","preference","outcome","adjacent_possible",
-                    "proposal","principle","question"
-                }:
+                kind=canonicalize_kind(x.get("kind"))
+                if not kind:
                     continue
+                x["kind"]=kind
                 x["evidence_ids"]=ev
                 items.append(x)
 
@@ -129,7 +105,8 @@ with LOCK.open("w") as lf:
 
         meta={"policy":"candidate-only","errors":errors,
               "error_count":len(errors),"diagnostics":diagnostics,
-              "sampled_evidence_ids":[r["id"] for r in rows]}
+              "sampled_evidence_ids":[r["id"] for r in rows],
+              "abandoned_stale_runs":abandoned}
         c.execute("""update distillation_runs set completed_at=?,status=?,
                      item_count=?,metadata=? where id=?""",
                   (now(),"SUCCESS" if not errors else "DEGRADED",

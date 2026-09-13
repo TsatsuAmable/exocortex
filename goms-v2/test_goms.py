@@ -42,6 +42,15 @@ class StoreTests(unittest.TestCase):
             previous = hashlib.sha256(raw).hexdigest()
 
 
+    def test_store_connections_close_after_context(self):
+        import sqlite3
+        with self.store.connect() as con:
+            con.execute("select 1").fetchone()
+        with self.assertRaises(sqlite3.ProgrammingError):
+            con.execute("select 1").fetchone()
+
+
+
 class MCPTests(unittest.IsolatedAsyncioTestCase):
     async def test_stdio_roundtrip(self):
         from mcp import ClientSession

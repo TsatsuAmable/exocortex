@@ -2,6 +2,8 @@
 import json, sqlite3
 from pathlib import Path
 
+from distillation_policy import canonicalize_kind, score_gold_case
+
 ROOT=Path.home()/"Library/Application Support/Aineko/GOMS"
 DB=ROOT/"goms.sqlite3"
 GOLD=json.loads((ROOT/"distillation_gold.json").read_text())["items"]
@@ -31,7 +33,7 @@ for g in GOLD:
                 r.get("subject") or "",r.get("predicate") or "",
                 r.get("object") or "",r.get("literal") or ""
             ]))
-            hits=sum(1 for k in g["object_keywords"] if norm(k) in text)
+            hits=sum(1 for k in g.get("object_keywords",[]) if norm(k) in text)
             candidates.append((hits,r))
     candidates.sort(key=lambda x:(x[0],x[1].get("confidence") or 0),reverse=True)
     best=candidates[0][1] if candidates else None
@@ -40,9 +42,11 @@ for g in GOLD:
         "evidence_id":g["evidence_id"],
         "sampled":g["evidence_id"] in sampled if sampled else None,
         "found":bool(best),
-        "kind_ok":bool(best and best["kind"] in g.get("acceptable_kinds",[g["kind"]])),
-        "predicate_exact":bool(best and best["predicate"]==g["predicate"]),
-        "keyword_fraction":keyword_hits/max(1,len(g["object_keywords"])),
+        "kind_ok":score_gold_case(g, bool(best), canonicalize_kind(best["kind"]) if best else None,
+                                  " ".join(str(best.get(k) or "") for k in ("subject","predicate","object","literal")) if best else "")["kind_ok"],
+        "predicate_exact":bool(best and best["predicate"]==g.get("predicate")) if g.get("should_extract",True) else not bool(best),
+        "keyword_fraction":score_gold_case(g, bool(best), canonicalize_kind(best["kind"]) if best else None,
+                                           " ".join(str(best.get(k) or "") for k in ("subject","predicate","object","literal")) if best else "")["keyword_fraction"],
         "best":{k:best.get(k) for k in ["kind","subject","predicate","object","literal","confidence"]} if best else None
     })
 

@@ -3,6 +3,8 @@ import json,sqlite3,urllib.request
 from datetime import datetime,timezone
 from pathlib import Path
 
+from distillation_policy import build_validation_prompt, canonicalize_kind
+
 ROOT=Path.home()/"Library/Application Support/Aineko/GOMS"
 DB=ROOT/"goms.sqlite3"
 BROKER="http://127.0.0.1:8765/v1/generate"
@@ -22,13 +24,7 @@ def call(prompt):
     with urllib.request.urlopen(req,timeout=150) as r:
       return json.load(r)
 
-SCHEMA='''Independently validate semantic candidates against their cited USER evidence.
-Return strict JSON {"items":[...]} with one item per candidate:
-candidate_id, verdict (accept|reject|reclassify), kind, durability
-(ephemeral|session|project|enduring), confidence, rationale.
-Reject conversational acknowledgements and one-off requests with no durable relevance.
-A proposal/question is not a decision unless evidence commits to it.
-Do not invent facts.'''
+SCHEMA=build_validation_prompt()
 
 with sqlite3.connect(DB) as c:
     c.row_factory=sqlite3.Row
@@ -74,11 +70,15 @@ with sqlite3.connect(DB) as c:
             if verdict=="accept": accepted+=1
             elif verdict=="reclassify": reclassified+=1
             else: rejected+=1
+            validated_kind=canonicalize_kind(v.get("kind"), cand["kind"])
+            if not validated_kind:
+                verdict="reject"
+                validated_kind=cand["kind"]
             c.execute("""insert or replace into distillation_validations
               (candidate_id,validator_model,verdict,validated_kind,durability,
                confidence,rationale,validated_at) values(?,?,?,?,?,?,?,?)""",
               (cand["id"],reply.get("model","critic"),verdict,
-               str(v.get("kind") or cand["kind"]),str(v.get("durability") or "session"),
+               validated_kind,str(v.get("durability") or "session"),
                min(.99,max(0,float(v.get("confidence") or 0))),
                str(v.get("rationale") or ""),now()))
         c.commit()

@@ -5,6 +5,7 @@ import json
 import os
 import sqlite3
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -75,11 +76,19 @@ class GomsStore:
         self.root.mkdir(parents=True, exist_ok=True)
         self.init()
 
+    @contextmanager
     def connect(self):
         con = sqlite3.connect(self.db, timeout=30)
         con.row_factory = sqlite3.Row
-        con.executescript(SCHEMA.read_text())
-        return con
+        try:
+            con.executescript(SCHEMA.read_text())
+            yield con
+            con.commit()
+        except Exception:
+            con.rollback()
+            raise
+        finally:
+            con.close()
 
     def init(self):
         with self.connect():

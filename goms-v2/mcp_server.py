@@ -8,7 +8,7 @@ from mcp.server.mcpserver import MCPServer
 from goms_store import GomsStore, ENTITY_TYPES, BRANCH_STATUSES
 from neo4j_projection import status as graph_projection_status, rebuild as graph_projection_rebuild, neighbors as graph_neighbors_query, vector_search as graph_vector_search
 
-store = GomsStore(root=Path.home()/"Library/Application Support/Aineko/GOMS")
+store = GomsStore()
 server = MCPServer(
     name="goms",
     title="GOMS Research Exocortex",

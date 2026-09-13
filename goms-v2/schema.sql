@@ -257,3 +257,26 @@ CREATE TABLE IF NOT EXISTS guardian_proposals (
   status TEXT NOT NULL DEFAULT 'candidate',
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS governor_reconciliations (
+  resource_id TEXT PRIMARY KEY REFERENCES resources(id),
+  disposition TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT '',
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  last_action TEXT,
+  last_result TEXT NOT NULL DEFAULT '{}',
+  observed_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS governor_actions (
+  id TEXT PRIMARY KEY,
+  resource_id TEXT NOT NULL REFERENCES resources(id),
+  generation INTEGER NOT NULL DEFAULT 0,
+  action TEXT NOT NULL,
+  status TEXT NOT NULL,
+  attempt INTEGER NOT NULL,
+  result TEXT NOT NULL DEFAULT '{}',
+  started_at TEXT NOT NULL,
+  completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_governor_actions_resource
+  ON governor_actions(resource_id,started_at);
