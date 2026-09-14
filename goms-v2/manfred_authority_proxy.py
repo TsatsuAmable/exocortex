@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
-import hmac
+import base64
+import binascii
 import ipaddress
 import json
 import os
+import subprocess
+import tempfile
 import threading
 import time
 from collections import deque
@@ -37,22 +39,56 @@ def client_allowed(peer: str, allowed_client: str | None) -> bool:
     return bool(allowed_client) and peer == allowed_client
 
 
-def load_key_file(path: str | Path) -> bytes:
-    key_path = Path(path)
-    mode = key_path.stat().st_mode & 0o777
+def load_allowed_signers_file(path: str | Path) -> Path:
+    signers_path = Path(path)
+    mode = signers_path.stat().st_mode & 0o777
     if mode & 0o077:
-        raise ValueError("authority key file must not be group/world accessible")
-    key = key_path.read_bytes().strip()
-    if len(key) < 16:
-        raise ValueError("authority key is missing or too short")
-    return key
+        raise ValueError("allowed signers file must not be group/world accessible")
+    if not signers_path.read_text().strip():
+        raise ValueError("allowed signers file is empty")
+    return signers_path
+
+
+class OpenSSHSignatureVerifier:
+    def __init__(self, allowed_signers_file: str | Path, signer_identity: str,
+                 ssh_keygen: str = "/usr/bin/ssh-keygen"):
+        self.allowed_signers_file = load_allowed_signers_file(allowed_signers_file)
+        self.signer_identity = str(signer_identity or "").strip()
+        if not self.signer_identity:
+            raise ValueError("signer identity is required")
+        self.ssh_keygen = ssh_keygen
+
+    def verify(self, canonical: bytes, supplied: str) -> bool:
+        try:
+            signature = base64.b64decode(supplied, validate=True)
+        except (ValueError, binascii.Error):
+            return False
+        path = None
+        try:
+            with tempfile.NamedTemporaryFile(prefix="manfred-authority-", suffix=".sshsig",
+                                             delete=False) as handle:
+                handle.write(signature)
+                path = handle.name
+            completed = subprocess.run([
+                self.ssh_keygen, "-Y", "verify",
+                "-f", str(self.allowed_signers_file),
+                "-I", self.signer_identity,
+                "-n", "goms-authority",
+                "-s", path,
+            ], input=canonical, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return completed.returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            return False
+        finally:
+            if path:
+                Path(path).unlink(missing_ok=True)
 
 
 class Server(ThreadingHTTPServer):
-    def __init__(self, address, handler, *, root: Path, allowed_client: str, key: bytes):
+    def __init__(self, address, handler, *, root: Path, allowed_client: str, verifier):
         self.control = ManfredControl(root / "goms.sqlite3")
         self.allowed_client = allowed_client
-        self.key = bytes(key)
+        self.verifier = verifier
         self.seen_requests = deque(maxlen=4096)
         self.seen_lock = threading.Lock()
         super().__init__(address, handler)
@@ -70,8 +106,7 @@ class Server(ThreadingHTTPServer):
         if abs(int(time.time()) - when) > MAX_CLOCK_SKEW_SECONDS:
             return False, "stale_request"
         canonical = f"POST\n{path}\n{timestamp}\n{request_id}\n".encode() + body
-        expected = hmac.new(self.key, canonical, hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(expected, supplied):
+        if not self.verifier.verify(canonical, supplied):
             return False, "bad_signature"
         with self.seen_lock:
             if request_id in self.seen_requests:
@@ -158,12 +193,12 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def create_server(root: str | Path, *, host: str, port: int,
-                  allowed_client: str, key: bytes) -> Server:
+                  allowed_client: str, allowed_signers_file: str | Path,
+                  signer_identity: str) -> Server:
     validate_bind(host, allowed_client)
-    if not key:
-        raise ValueError("non-empty authority key required")
+    verifier = OpenSSHSignatureVerifier(allowed_signers_file, signer_identity)
     return Server((host, int(port)), Handler, root=Path(root),
-                  allowed_client=allowed_client, key=key)
+                  allowed_client=allowed_client, verifier=verifier)
 
 
 def main() -> None:
@@ -173,13 +208,15 @@ def main() -> None:
     ap.add_argument("--host", required=True)
     ap.add_argument("--port", type=int, default=8795)
     ap.add_argument("--allowed-client", required=True)
-    ap.add_argument("--key-file", default=os.environ.get(
-        "GOMS_MANFRED_AUTHORITY_KEY_FILE",
-        str(Path.home() / "Library/Application Support/Aineko/GOMS/secrets/manfred-ingress.key")))
+    ap.add_argument("--allowed-signers-file", default=os.environ.get(
+        "GOMS_MANFRED_AUTHORITY_ALLOWED_SIGNERS_FILE",
+        str(Path.home() / "Library/Application Support/Aineko/GOMS/secrets/manfred-authority-allowed_signers")))
+    ap.add_argument("--signer-identity", default=os.environ.get(
+        "GOMS_MANFRED_AUTHORITY_SIGNER_IDENTITY", "millhouse-manfred"))
     args = ap.parse_args()
-    key = load_key_file(args.key_file)
-    server = create_server(args.root, host=args.host, port=args.port,
-                           allowed_client=args.allowed_client, key=key)
+    server = create_server(
+        args.root, host=args.host, port=args.port, allowed_client=args.allowed_client,
+        allowed_signers_file=args.allowed_signers_file, signer_identity=args.signer_identity)
     print(json.dumps({"listening": f"{args.host}:{args.port}",
                       "mode": "signed-authority"}), flush=True)
     server.serve_forever()
