@@ -42,4 +42,25 @@ class ManfredReadProxyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             create_server(self.root,host="0.0.0.0",port=0)
 
+
+class ManfredTailnetBindTests(unittest.TestCase):
+    def test_tailnet_bind_requires_explicit_tailnet_client(self):
+        from manfred_read_proxy import validate_bind
+        validate_bind("127.0.0.1", None)
+        with self.assertRaises(ValueError):
+            validate_bind("100.109.209.29", None)
+        validate_bind("100.109.209.29", "100.73.215.97")
+
+    def test_non_tailnet_addresses_are_rejected(self):
+        from manfred_read_proxy import validate_bind
+        with self.assertRaises(ValueError):
+            validate_bind("192.168.1.222", "100.73.215.97")
+        with self.assertRaises(ValueError):
+            validate_bind("100.109.209.29", "192.168.1.128")
+
+    def test_remote_client_filter_is_exact(self):
+        from manfred_read_proxy import client_allowed
+        self.assertTrue(client_allowed("100.73.215.97", "100.73.215.97"))
+        self.assertFalse(client_allowed("100.66.115.49", "100.73.215.97"))
+
 if __name__=="__main__": unittest.main(verbosity=2)
