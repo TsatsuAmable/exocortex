@@ -358,3 +358,32 @@ CREATE TABLE IF NOT EXISTS attention_control_intents (
 );
 CREATE INDEX IF NOT EXISTS idx_attention_control_intents_intent
   ON attention_control_intents(intent_id);
+
+CREATE TABLE IF NOT EXISTS alerts (
+  id TEXT PRIMARY KEY,
+  intent_id TEXT NOT NULL REFERENCES control_intents(id),
+  dedupe_key TEXT NOT NULL,
+  severity TEXT NOT NULL,
+  state TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  summary TEXT NOT NULL DEFAULT '',
+  reason TEXT NOT NULL DEFAULT '',
+  policy TEXT NOT NULL DEFAULT '{}',
+  escalation_count INTEGER NOT NULL DEFAULT 0,
+  last_escalated_at TEXT,
+  next_escalation_at TEXT,
+  expires_at TEXT,
+  raised_at TEXT NOT NULL,
+  delivered_at TEXT,
+  seen_at TEXT,
+  acknowledged_at TEXT,
+  resolved_at TEXT,
+  resolution_reason TEXT,
+  updated_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_alerts_active_dedupe
+  ON alerts(dedupe_key) WHERE state <> 'RESOLVED';
+CREATE INDEX IF NOT EXISTS idx_alerts_state_severity
+  ON alerts(state,severity,updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_alerts_intent
+  ON alerts(intent_id,state,updated_at DESC);
