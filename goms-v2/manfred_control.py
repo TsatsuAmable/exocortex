@@ -103,9 +103,10 @@ class ManfredControl:
             """, (limit,)).fetchall()]
             intents = [dict(r) for r in con.execute("""
               SELECT id,kind,title,summary,status,priority,risk_tier,execution_policy,
-                     source,source_ref,recommended_action,alternatives,decision_required,
-                     origin_conversation_id,origin_conversation_url,
-                     execution_conversation_id,execution_conversation_url,updated_at
+                     source,source_ref,provenance,evidence_refs,recommended_action,alternatives,
+                     decision_required,origin_conversation_id,origin_conversation_url,
+                     execution_conversation_id,execution_conversation_url,
+                     verification_policy,outcome,updated_at
               FROM control_intents
               WHERE status NOT IN ('RESOLVED','REJECTED','FAILED')
               ORDER BY CASE status WHEN 'NEEDS_DECISION' THEN 0 WHEN 'ESCALATED' THEN 1
@@ -122,7 +123,9 @@ class ManfredControl:
                 row["unresolved"] = []
                 row["projection_warning"] = "invalid_unresolved_json"
         for row in intents:
-            for field, fallback in (("recommended_action", {}), ("alternatives", [])):
+            for field, fallback in (("provenance", {}), ("evidence_refs", []),
+                                    ("recommended_action", {}), ("alternatives", []),
+                                    ("verification_policy", {}), ("outcome", {})):
                 try:
                     row[field] = json.loads(row.get(field) or json.dumps(fallback))
                 except json.JSONDecodeError:
