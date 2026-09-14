@@ -65,6 +65,8 @@ with closing(sqlite3.connect(DB)) as c, c:
       "org.aineko.chatgpt-replication",
       "org.aineko.goms-semantic-maintenance",
       "org.agalmic.goms-manfred-sync",
+      "org.aineko.goms-manfred-control",
+      "org.aineko.goms-manfred-read",
       "org.agalmic.aineko-vault-git-sync",
     ]
     rc,out,err=run(["launchctl","list"])
