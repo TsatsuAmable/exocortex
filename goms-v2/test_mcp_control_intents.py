@@ -75,18 +75,31 @@ class MCPControlIntentTests(unittest.TestCase):
     def test_origin_and_execution_links_remain_distinct_and_validate_https_host(self):
         intent_id, _ = self.make_intent("attn_links")
         origin = mcp_server.link_control_intent_conversation(
-            intent_id, "origin", "conv-origin", "https://chatgpt.com/c/origin", actor="chatgpt")
+            intent_id, "origin", "conv-origin", "https://chatgpt.com/c/origin", actor="chatgpt", locator_source="supplied")
         execution = mcp_server.link_control_intent_conversation(
-            intent_id, "execution", "conv-exec", "https://chatgpt.com/c/exec", actor="chatgpt")
+            intent_id, "execution", "conv-exec", "https://chatgpt.com/c/exec", actor="chatgpt", locator_source="observed")
         self.assertTrue(origin["ok"])
         self.assertTrue(execution["ok"])
         intent = self.svc.get(intent_id)
         self.assertEqual(intent["origin_conversation_id"], "conv-origin")
         self.assertEqual(intent["execution_conversation_id"], "conv-exec")
+        self.assertEqual(intent["provenance"]["conversation_locators"]["execution"]["source"], "observed")
         bad = mcp_server.link_control_intent_conversation(
-            intent_id, "execution", "conv-bad", "javascript:alert(1)", actor="chatgpt")
+            intent_id, "execution", "conv-bad", "javascript:alert(1)", actor="chatgpt", locator_source="supplied")
         self.assertFalse(bad["ok"])
         self.assertEqual(bad["error"], "invalid_conversation_url")
+
+
+    def test_mcp_conversation_link_defaults_to_unverified_locator(self):
+        intent_id, _ = self.make_intent("attn_unverified_link")
+        result = mcp_server.link_control_intent_conversation(
+            intent_id, "execution", "conv", "https://chatgpt.com/c/x", actor="chatgpt"
+        )
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            result["intent"]["provenance"]["conversation_locators"]["execution"]["source"],
+            "unverified",
+        )
 
 
 if __name__ == "__main__":

@@ -89,25 +89,45 @@ class ControlIntentTests(unittest.TestCase):
         self.add_attention("attn_chat")
         intent_id = self.svc.ensure_for_attention("attn_chat")
         self.svc.link_conversation(
-            intent_id, "origin", "conv-origin", "https://chatgpt.com/c/origin", "human:test"
+            intent_id, "origin", "conv-origin", "https://chatgpt.com/c/origin", "human:test", "supplied"
         )
         self.svc.link_conversation(
-            intent_id, "execution", "conv-exec", "https://chatgpt.com/c/exec", "human:test"
+            intent_id, "execution", "conv-exec", "https://chatgpt.com/c/exec", "human:test", "observed"
         )
         intent = self.svc.get(intent_id)
         self.assertEqual(intent["origin_conversation_id"], "conv-origin")
         self.assertEqual(intent["origin_conversation_url"], "https://chatgpt.com/c/origin")
         self.assertEqual(intent["execution_conversation_id"], "conv-exec")
         self.assertEqual(intent["execution_conversation_url"], "https://chatgpt.com/c/exec")
+        locators = intent["provenance"]["conversation_locators"]
+        self.assertEqual(locators["origin"]["source"], "supplied")
+        self.assertEqual(locators["execution"]["source"], "observed")
 
     def test_invalid_conversation_role_is_rejected(self):
         self.add_attention("attn_bad_role")
         intent_id = self.svc.ensure_for_attention("attn_bad_role")
         with self.assertRaises(ValueError):
             self.svc.link_conversation(
-                intent_id, "primary", "conv", "https://chatgpt.com/c/x", "human:test"
+                intent_id, "primary", "conv", "https://chatgpt.com/c/x", "human:test", "supplied"
             )
 
+
+    def test_conversation_locator_defaults_unverified_and_rejects_unknown_source(self):
+        self.add_attention("attn_locator_source")
+        intent_id = self.svc.ensure_for_attention("attn_locator_source")
+        self.svc.link_conversation(
+            intent_id, "execution", "conv", "https://chatgpt.com/c/x", "human:test"
+        )
+        intent = self.svc.get(intent_id)
+        self.assertEqual(
+            intent["provenance"]["conversation_locators"]["execution"]["source"],
+            "unverified",
+        )
+        with self.assertRaises(ValueError):
+            self.svc.link_conversation(
+                intent_id, "execution", "conv", "https://chatgpt.com/c/x",
+                "human:test", "guessed",
+            )
 
     def test_execution_policy_defaults_are_risk_bounded(self):
         action = {"type": "checkpoint_branch", "target_id": "branch_1", "payload": {}}

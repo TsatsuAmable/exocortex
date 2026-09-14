@@ -15,6 +15,7 @@ INTENT_STATUSES = {
 }
 TERMINAL_STATUSES = {"RESOLVED", "REJECTED", "FAILED"}
 EXECUTION_POLICIES = {"AUTO_AFTER_APPROVAL", "CONFIRM_HIGH_RISK", "HUMAN_ONLY"}
+CONVERSATION_LOCATOR_SOURCES = {"observed", "supplied", "synthetic", "unverified"}
 BOUNDED_ACTION_TYPES = {"checkpoint_branch", "resolve_attention"}
 LEGAL_TRANSITIONS = {
     "DETECTED": {"STAGED", "FAILED"},
@@ -323,29 +324,39 @@ class ControlIntentService:
         return self.get(intent_id)
 
     def link_conversation(self, intent_id: str, role: str, conversation_id: str | None,
-                          url: str | None, actor: str) -> dict:
+                          url: str | None, actor: str,
+                          locator_source: str = "unverified") -> dict:
         role = str(role or "").lower()
         if role not in {"origin", "execution"}:
             raise ValueError("conversation role must be origin or execution")
         actor = str(actor or "").strip()
         if not actor:
             raise ValueError("actor is required")
+        locator_source = str(locator_source or "unverified").strip().lower()
+        if locator_source not in CONVERSATION_LOCATOR_SOURCES:
+            raise ValueError("invalid_conversation_locator_source")
         if not _valid_conversation_url(url):
             raise ValueError("invalid_conversation_url")
         id_col = f"{role}_conversation_id"
         url_col = f"{role}_conversation_url"
         with self.store.connect() as con:
             con.execute("BEGIN IMMEDIATE")
-            if not con.execute("SELECT 1 FROM control_intents WHERE id=?", (intent_id,)).fetchone():
+            row = con.execute("SELECT provenance FROM control_intents WHERE id=?", (intent_id,)).fetchone()
+            if not row:
                 raise KeyError(f"Unknown control intent: {intent_id}")
+            provenance = _loads(row["provenance"], {})
+            locators = provenance.setdefault("conversation_locators", {})
+            locators[role] = {"source": locator_source, "captured_by": actor}
             ts = now()
             con.execute(
-                f"UPDATE control_intents SET {id_col}=?,{url_col}=?,updated_at=? WHERE id=?",
-                (conversation_id, url, ts, intent_id),
+                f"UPDATE control_intents SET {id_col}=?,{url_col}=?,provenance=?,updated_at=? WHERE id=?",
+                (conversation_id, url, _dumps(provenance), ts, intent_id),
             )
-            detail = {"role": role, "conversation_id": conversation_id, "url": url}
+            detail = {"role": role, "conversation_id": conversation_id,
+                      "url": url, "locator_source": locator_source}
             self._event(con, intent_id, "conversation_link", actor, detail)
         self.store.append_event({"op": "control_intent_conversation_link", "actor": actor,
                                  "intent_id": intent_id, "role": role,
-                                 "conversation_id": conversation_id})
+                                 "conversation_id": conversation_id,
+                                 "locator_source": locator_source})
         return self.get(intent_id)

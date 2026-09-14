@@ -305,10 +305,11 @@ def decide_control_intent(intent_id: str, decision: str, idempotency_key: str,
 @server.tool(structured_output=True, description="Link an origin or execution ChatGPT conversation to a canonical control intent.")
 def link_control_intent_conversation(intent_id: str, role: str,
                                      conversation_id: str | None, url: str | None,
-                                     actor: str = "chatgpt") -> dict[str, Any]:
+                                     actor: str = "chatgpt",
+                                     locator_source: str = "unverified") -> dict[str, Any]:
     try:
         intent=_intent_service().link_conversation(
-            intent_id,role,conversation_id,url,actor)
+            intent_id,role,conversation_id,url,actor,locator_source)
         return ok(intent=intent)
     except KeyError:
         return {"ok":False,"error":"intent_not_found"}
