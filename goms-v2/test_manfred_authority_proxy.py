@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import base64
 import json
-import subprocess
 import tempfile
 import threading
 import time
@@ -10,13 +9,16 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 from control_intents import ControlIntentService
 from goms_store import GomsStore
 from manfred_authority_proxy import (
     Handler,
-    OpenSSHSignatureVerifier,
+    Ed25519SignatureVerifier,
     Server,
-    load_allowed_signers_file,
+    load_public_key_file,
     validate_bind,
 )
 
@@ -26,15 +28,13 @@ class ManfredAuthorityProxyTests(unittest.TestCase):
     def setUpClass(cls):
         cls.keys_tmp = tempfile.TemporaryDirectory(prefix="manfred-authority-keys-")
         cls.key_root = Path(cls.keys_tmp.name)
-        cls.private_key = cls.key_root / "id_ed25519"
-        subprocess.run([
-            "/usr/bin/ssh-keygen", "-q", "-t", "ed25519", "-N", "",
-            "-C", "manfred-authority-test", "-f", str(cls.private_key),
-        ], check=True)
-        pub = Path(str(cls.private_key) + ".pub").read_text().split()
-        cls.allowed = cls.key_root / "allowed_signers"
-        cls.allowed.write_text(f"millhouse-test {pub[0]} {pub[1]}\n")
-        cls.allowed.chmod(0o600)
+        cls.private_key = Ed25519PrivateKey.generate()
+        cls.public_key_file = cls.key_root / "authority-public.pem"
+        cls.public_key_file.write_bytes(cls.private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        ))
+        cls.public_key_file.chmod(0o600)
 
     @classmethod
     def tearDownClass(cls):
@@ -44,7 +44,7 @@ class ManfredAuthorityProxyTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory(prefix="manfred-authority-")
         self.root = Path(self.tmp.name)
         self.store = GomsStore(self.root)
-        verifier = OpenSSHSignatureVerifier(self.allowed, "millhouse-test")
+        verifier = Ed25519SignatureVerifier(self.public_key_file)
         self.server = Server(
             ("127.0.0.1", 0), Handler, root=self.root,
             allowed_client="127.0.0.1", verifier=verifier,
@@ -64,18 +64,10 @@ class ManfredAuthorityProxyTests(unittest.TestCase):
         raw = json.dumps(body, separators=(",", ":"), sort_keys=True).encode()
         path = "/v1/manfred/intent-command"
         canonical = f"POST\n{path}\n{timestamp}\n{request_id}\n".encode() + raw
-        message = self.root / f"{request_id}.msg"
-        message.write_bytes(canonical)
-        subprocess.run([
-            "/usr/bin/ssh-keygen", "-q", "-Y", "sign",
-            "-f", str(self.private_key), "-n", "goms-authority", str(message),
-        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        sig_path = Path(str(message) + ".sig")
-        signature = base64.b64encode(sig_path.read_bytes()).decode()
-        message.unlink(missing_ok=True)
-        sig_path.unlink(missing_ok=True)
+        signature_bytes = self.private_key.sign(canonical)
         if corrupt:
-            signature = base64.b64encode(b"not-a-valid-sshsig").decode()
+            signature_bytes = b"\x00" * len(signature_bytes)
+        signature = base64.b64encode(signature_bytes).decode()
         return raw, {
             "Content-Type": "application/json",
             "X-Manfred-Request-Id": request_id,
@@ -105,14 +97,14 @@ class ManfredAuthorityProxyTests(unittest.TestCase):
             validate_bind("100.109.209.29", "192.168.1.128")
         validate_bind("100.109.209.29", "100.73.215.97")
 
-    def test_allowed_signers_file_must_be_private(self):
-        allowed = self.root / "allowed_signers"
-        allowed.write_text(self.allowed.read_text())
-        allowed.chmod(0o644)
+    def test_public_key_file_must_be_private(self):
+        public_key = self.root / "authority-public.pem"
+        public_key.write_bytes(self.public_key_file.read_bytes())
+        public_key.chmod(0o644)
         with self.assertRaises(ValueError):
-            load_allowed_signers_file(allowed)
-        allowed.chmod(0o600)
-        self.assertEqual(load_allowed_signers_file(allowed), allowed)
+            load_public_key_file(public_key)
+        public_key.chmod(0o600)
+        self.assertEqual(load_public_key_file(public_key), public_key)
 
     def test_wrong_peer_is_forbidden_before_auth(self):
         self.server.allowed_client = "100.73.215.97"
