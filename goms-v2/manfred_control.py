@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from goms_store import GomsStore, BRANCH_STATUSES
+from control_intent_reconciler import reconcile_attention_intents
 
 TERMINAL_COMMAND_STATUSES = {"SUCCESS", "REJECTED", "FAILED", "UNKNOWN"}
 MAX_PENDING_AGE_SECONDS = 300
@@ -67,13 +68,17 @@ class ManfredControl:
 
     def build_brief(self, limit: int = 50) -> dict:
         limit = max(1, min(int(limit), 200))
+        reconcile_attention_intents(self.db.parent)
         with self._connect() as con:
             con.execute("BEGIN")
             attention = [dict(r) for r in con.execute("""
-              SELECT id,resource_id,category,severity,title,summary,source,updated_at
-              FROM attention_items WHERE status='open'
-              ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
-                       updated_at DESC LIMIT ?
+              SELECT a.id,a.resource_id,a.category,a.severity,a.title,a.summary,
+                     a.source,a.updated_at,m.intent_id
+              FROM attention_items a
+              LEFT JOIN attention_control_intents m ON m.attention_id=a.id
+              WHERE a.status='open'
+              ORDER BY CASE a.severity WHEN 'critical' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
+                       a.updated_at DESC LIMIT ?
             """, (limit,)).fetchall()]
             governor = [dict(r) for r in con.execute("""
               SELECT resource_id,disposition,reason,attempt_count,last_result,observed_at
@@ -88,6 +93,19 @@ class ManfredControl:
               ORDER BY CASE status WHEN 'BLOCKED' THEN 0 WHEN 'ACTIVE' THEN 1 ELSE 2 END,
                        updated_at DESC LIMIT ?
             """, (limit,)).fetchall()]
+            intents = [dict(r) for r in con.execute("""
+              SELECT id,kind,title,summary,status,priority,risk_tier,execution_policy,
+                     source,source_ref,recommended_action,alternatives,decision_required,
+                     origin_conversation_id,origin_conversation_url,
+                     execution_conversation_id,execution_conversation_url,updated_at
+              FROM control_intents
+              WHERE status NOT IN ('RESOLVED','REJECTED','FAILED')
+              ORDER BY CASE status WHEN 'NEEDS_DECISION' THEN 0 WHEN 'ESCALATED' THEN 1
+                                   WHEN 'EXECUTING' THEN 2 WHEN 'VERIFYING' THEN 3
+                                   WHEN 'APPROVED' THEN 4 ELSE 5 END,
+                       CASE priority WHEN 'P0' THEN 0 WHEN 'P1' THEN 1 ELSE 2 END,
+                       updated_at DESC LIMIT ?
+            """, (limit,)).fetchall()]
         for row in branches:
             try:
                 unresolved = json.loads(row.get("unresolved") or "[]")
@@ -95,7 +113,16 @@ class ManfredControl:
             except json.JSONDecodeError:
                 row["unresolved"] = []
                 row["projection_warning"] = "invalid_unresolved_json"
-        return {"attention": attention, "governor": governor, "branches": branches}
+        for row in intents:
+            for field, fallback in (("recommended_action", {}), ("alternatives", [])):
+                try:
+                    row[field] = json.loads(row.get(field) or json.dumps(fallback))
+                except json.JSONDecodeError:
+                    row[field] = fallback
+                    row["projection_warning"] = f"invalid_{field}_json"
+            row["decision_required"] = bool(row.get("decision_required"))
+        return {"attention": attention, "governor": governor,
+                "branches": branches, "intents": intents}
 
     def _claim_command(self, key: str, ctype: str, target: str, payload):
         fingerprint = command_fingerprint(ctype, target, payload)
