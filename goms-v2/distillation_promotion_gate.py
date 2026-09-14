@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from contextlib import closing
 import json, re, sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,7 +14,7 @@ def norm(x):
 SUSPICIOUS={"anversal","mnemosyne","nemosign","user workflow","system deployment","tooling ecosystem","neo4j knowledge graph"}
 GENERIC_TYPES={"idea","constraint","capability","artifact","tool","project","routine","scarcity"}
 
-with sqlite3.connect(DB) as c:
+with closing(sqlite3.connect(DB)) as c, c:
     c.row_factory=sqlite3.Row
     c.executescript("""CREATE TABLE IF NOT EXISTS distillation_promotion_gate(
       candidate_id TEXT PRIMARY KEY, decision TEXT NOT NULL, score REAL NOT NULL,

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from contextlib import closing
 import argparse
 import hashlib
 import json
@@ -176,7 +177,7 @@ def publish_queue_resource(db_path, counts, *, now=None):
               "failure_class": failure, "counts": counts,
               "last_observed": current.isoformat()}
 
-    with sqlite3.connect(db_path) as c:
+    with closing(sqlite3.connect(db_path)) as c, c:
         row = c.execute("select generation,spec from resources where id=?", (rid,)).fetchone()
         spec_json = json.dumps(spec, sort_keys=True)
         generation = 1 if not row else int(row[0]) + (1 if row[1] != spec_json else 0)

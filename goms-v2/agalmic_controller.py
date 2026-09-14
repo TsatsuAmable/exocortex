@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from contextlib import closing
 import hashlib, json, re, sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -50,7 +51,7 @@ def capability(c,scarcity):
         if row: return row[0],row[1]
     return None,None
 
-with sqlite3.connect(DB) as c:
+with closing(sqlite3.connect(DB)) as c, c:
     c.row_factory=sqlite3.Row
     rows=c.execute("select * from branches").fetchall()
     counts={}

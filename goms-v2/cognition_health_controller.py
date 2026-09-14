@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from contextlib import closing
 import json, re, sqlite3, subprocess, urllib.request, urllib.error
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -48,7 +49,7 @@ quota_errors=[e for e in recent_errors if QUOTA.search(str(e.get("error","")))]
 auth_errors=[e for e in recent_errors if AUTH.search(str(e.get("error","")))]
 provider_errors=[e for e in recent_errors if PROVIDER.search(str(e.get("error","")))]
 
-with sqlite3.connect(DB) as c:
+with closing(sqlite3.connect(DB)) as c, c:
     if not broker_ok:
         sev="critical" if not fallback_ok else "warning"
         attention(c,"broker-down",sev,"LLM broker unavailable",

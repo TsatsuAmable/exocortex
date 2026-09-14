@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from contextlib import closing
 import json, sqlite3
 from pathlib import Path
 
@@ -11,7 +12,7 @@ GOLD=json.loads((ROOT/"distillation_gold.json").read_text())["items"]
 def norm(x):
     return " ".join(str(x or "").lower().replace("_"," ").split())
 
-with sqlite3.connect(DB) as c:
+with closing(sqlite3.connect(DB)) as c, c:
     c.row_factory=sqlite3.Row
     rr=c.execute("""select id,metadata from distillation_runs
                      where status in ('SUCCESS','DEGRADED')

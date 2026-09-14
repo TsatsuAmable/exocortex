@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from contextlib import closing
 import hashlib,json,sqlite3,subprocess
 from datetime import datetime,timezone
 from pathlib import Path
@@ -42,7 +43,7 @@ def run(cmd):
     cp=subprocess.run(cmd,text=True,capture_output=True)
     return cp.returncode,cp.stdout.strip(),cp.stderr.strip()
 
-with sqlite3.connect(DB) as c:
+with closing(sqlite3.connect(DB)) as c, c:
     # Critical services on Mac
     services=[
       ("Neo4j",["pgrep","-f","org.neo4j.server.Neo4jCommunity"]),

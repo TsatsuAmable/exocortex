@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from contextlib import closing
 import json,sqlite3,urllib.request
 from pathlib import Path
 
@@ -25,7 +26,7 @@ def parse(text):
     if a<0 or b<=a: raise ValueError("no JSON")
     return json.loads(text[a:b+1])
 
-with sqlite3.connect(DB) as c:
+with closing(sqlite3.connect(DB)) as c, c:
     c.row_factory=sqlite3.Row
     evidence={}
     for g in GOLD:

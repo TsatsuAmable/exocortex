@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from contextlib import closing
 import hashlib,json,sqlite3,urllib.request
 from datetime import datetime,timezone
 from pathlib import Path
@@ -20,7 +21,7 @@ def call(prompt):
         "Content-Type":"application/json","Authorization":"Bearer "+SECRET})
     with urllib.request.urlopen(req,timeout=150) as r:return json.load(r)
 
-with sqlite3.connect(DB) as c:
+with closing(sqlite3.connect(DB)) as c, c:
     c.row_factory=sqlite3.Row
     run=c.execute("select id from distillation_runs where item_count>0 order by completed_at desc limit 1").fetchone()[0]
     candidates=[dict(r) for r in c.execute(
@@ -57,7 +58,7 @@ CANDIDATES_AND_EVIDENCE:
 
 reply=call(prompt)
 out=parse(reply.get("response",""))
-with sqlite3.connect(DB) as c:
+with closing(sqlite3.connect(DB)) as c, c:
     for x in out.get("items",[]):
         cid=x.get("candidate_id")
         if not cid: continue

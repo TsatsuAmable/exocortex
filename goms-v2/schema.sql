@@ -280,3 +280,17 @@ CREATE TABLE IF NOT EXISTS governor_actions (
 );
 CREATE INDEX IF NOT EXISTS idx_governor_actions_resource
   ON governor_actions(resource_id,started_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_governor_action_attempt
+  ON governor_actions(resource_id,generation,action,attempt);
+CREATE TABLE IF NOT EXISTS manfred_commands (
+  idempotency_key TEXT PRIMARY KEY,
+  command_type TEXT NOT NULL,
+  target_id TEXT,
+  payload TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL,
+  result TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_manfred_commands_status
+  ON manfred_commands(status,updated_at);

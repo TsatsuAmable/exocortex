@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from contextlib import closing
 import json, sqlite3, hashlib
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,7 +19,7 @@ def assert_(c,sub,pred,obj=None,literal=None,confidence=1.0,status="explicit",so
     c.execute("""insert or ignore into semantic_assertions
       (id,subject_id,predicate,object_id,literal_value,confidence,epistemic_status,source_ref,metadata,created_at,updated_at)
       values(?,?,?,?,?,?,?,?,?,?,?)""",(aid,sub,pred,obj,literal,confidence,status,source_ref,"{}",ts,ts))
-with sqlite3.connect(DB) as c:
+with closing(sqlite3.connect(DB)) as c, c:
     person=ins_entity(c,"person","User","Human principal and judgment authority in the Manfred↔Aineko collaboration.")
     obj=ins_entity(c,"idea","Increase joint cognitive capacity","Expand autonomous machine cognition while preserving human strategic control.")
     scarcity=ins_entity(c,"scarcity","Human attention","Human attention, selection, validation, and intervention bandwidth are scarce.")

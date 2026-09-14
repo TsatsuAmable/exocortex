@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from contextlib import closing
 import array,hashlib,json,sqlite3,urllib.request
 from datetime import datetime,timezone
 from pathlib import Path
@@ -30,7 +31,7 @@ def store(c,kind,target_id,text):
       (kind,target_id,MODEL,h,len(v),blob,ts,ts))
     return True
 
-with sqlite3.connect(DB) as c:
+with closing(sqlite3.connect(DB)) as c, c:
     changed=0
     for r in c.execute("""select id,type,title,summary from entities
                           where type not in ('evidence','source')""").fetchall():

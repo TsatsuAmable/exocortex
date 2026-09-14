@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from contextlib import closing
 import json, sqlite3, urllib.request
 from datetime import datetime,timezone
 from pathlib import Path
@@ -38,7 +39,7 @@ When a requirement/constraint is expressed, prefer a typed constraint entity or 
 New entities are proposals only.
 Return strict JSON {"items":[...]} with one item per input candidate.'''
 
-with sqlite3.connect(DB) as c:
+with closing(sqlite3.connect(DB)) as c, c:
     c.row_factory=sqlite3.Row
     c.executescript("""CREATE TABLE IF NOT EXISTS distillation_reconciliation_proposals(
       candidate_id TEXT PRIMARY KEY, canonical_kind TEXT,

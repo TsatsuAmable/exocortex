@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from contextlib import closing
 import hashlib,json,re,sqlite3
 from collections import Counter,defaultdict
 from datetime import datetime,timezone
@@ -34,7 +35,7 @@ def tokens(text):
             out.append(w)
     return out
 
-with sqlite3.connect(DB) as c:
+with closing(sqlite3.connect(DB)) as c, c:
     c.row_factory=sqlite3.Row
     rows=c.execute("""select summary,source from entities
                       where type='evidence' and tags like '%\"user\"%'

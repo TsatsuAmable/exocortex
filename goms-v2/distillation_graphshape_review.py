@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from contextlib import closing
 import json, sqlite3, urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,7 +43,7 @@ with conceptual owner, sentence-shaped entities, project-specific claims attache
 requirements represented as facts, proposals represented as decisions, and tools confused
 with capabilities. Do not invent new facts.'''
 
-with sqlite3.connect(DB) as c:
+with closing(sqlite3.connect(DB)) as c, c:
     c.row_factory=sqlite3.Row
     c.executescript("""CREATE TABLE IF NOT EXISTS distillation_graphshape_reviews(
       candidate_id TEXT PRIMARY KEY, verdict TEXT NOT NULL, rationale TEXT,

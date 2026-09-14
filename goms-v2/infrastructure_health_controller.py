@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from contextlib import closing
 import hashlib,json,os,sqlite3,subprocess,time
 from datetime import datetime,timezone
 from pathlib import Path
@@ -46,7 +47,7 @@ def newest_age(path):
     oldest=min(f.stat().st_mtime for f in files)
     return len(files),time.time()-oldest
 
-with sqlite3.connect(DB) as c:
+with closing(sqlite3.connect(DB)) as c, c:
     # Canonical DB integrity
     try:
         result=c.execute("PRAGMA quick_check").fetchone()[0]

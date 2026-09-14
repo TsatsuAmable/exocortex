@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from contextlib import closing
 import hashlib, json, sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,7 +14,7 @@ def aid(subject,predicate,obj,literal,source):
     raw="|".join(str(x or "") for x in [subject,predicate,obj,literal,source])
     return "assert_"+hashlib.sha256(raw.encode()).hexdigest()[:24]
 
-with sqlite3.connect(DB) as c:
+with closing(sqlite3.connect(DB)) as c, c:
     c.row_factory=sqlite3.Row
     rows=[dict(r) for r in c.execute("""select p.*,d.evidence_ids,
       d.confidence extractor_confidence,v.confidence validator_confidence,

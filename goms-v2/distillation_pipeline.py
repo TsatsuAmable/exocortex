@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from contextlib import closing
 import fcntl, hashlib, json, sqlite3, urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,7 +37,7 @@ with LOCK.open("w") as lf:
     except BlockingIOError:
         raise SystemExit("distillation already running")
 
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.row_factory=sqlite3.Row
         c.executescript("""CREATE TABLE IF NOT EXISTS distillation_runs(
           id TEXT PRIMARY KEY,started_at TEXT,completed_at TEXT,status TEXT,

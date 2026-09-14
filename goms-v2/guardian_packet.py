@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from contextlib import closing
 import json,sqlite3,hashlib
 from datetime import datetime,timezone,timedelta
 from pathlib import Path
@@ -11,7 +12,7 @@ OUT.mkdir(parents=True,exist_ok=True)
 def now(): return datetime.now(timezone.utc).isoformat()
 def rows(c,q,args=()): return [dict(r) for r in c.execute(q,args).fetchall()]
 
-with sqlite3.connect(DB) as c:
+with closing(sqlite3.connect(DB)) as c, c:
     c.row_factory=sqlite3.Row
     packet={
       "generated_at":now(),

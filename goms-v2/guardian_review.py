@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from contextlib import closing
 import hashlib,json,re,sqlite3,urllib.request
 from datetime import datetime,timezone
 from pathlib import Path
@@ -54,7 +55,7 @@ Evaluate whether GOMS converts tasks/scarcities into capabilities and adjacent p
 Never directly mutate canonical GOMS.'''
 prompt=schema+"\n\nAUDIT PACKET:\n"+packet_text
 
-with sqlite3.connect(DB) as c:
+with closing(sqlite3.connect(DB)) as c, c:
     c.execute("""insert or replace into guardian_runs
       (id,started_at,model,status,packet_sha256,metadata)
       values(?,?,?,?,?,?)""",(run_id,now(),"strong","RUNNING",packet_sha,
@@ -76,7 +77,7 @@ try:
     out_path=OUT/f"{run_id}.json"
     out_path.write_text(json.dumps({"strong":strong,"repair":repair,"review":review},
                                    ensure_ascii=False,indent=2))
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         for prop in proposals[:30]:
             title=str(prop.get("title") or "Untitled Guardian proposal")
             c.execute("""insert or replace into guardian_proposals
@@ -100,7 +101,7 @@ try:
                       "overall_health":review.get("overall_health"),
                       "summary":review.get("summary")},indent=2))
 except Exception as exc:
-    with sqlite3.connect(DB) as c:
+    with closing(sqlite3.connect(DB)) as c, c:
         c.execute("update guardian_runs set completed_at=?,status='ERROR',metadata=? where id=?",
                   (now(),json.dumps({"packet":str(packet_path),"error":str(exc)[:2000]}),run_id))
         c.commit()

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from contextlib import closing
 import hashlib,json,sqlite3
 from datetime import datetime,timezone
 from pathlib import Path
@@ -16,7 +17,7 @@ def upsert(c,kind,title,summary,status="observed",metadata=None):
 def rel(c,a,r,b):
     c.execute("insert or replace into relations(src,rel,dst,evidence,created_at) values(?,?,?,?,?)",
               (a,r,b,"runtime-observation",now()))
-with sqlite3.connect(DB) as c:
+with closing(sqlite3.connect(DB)) as c, c:
     mac=upsert(c,"machine","MacBook Pro","Primary local cognitive/tooling host.")
     yoda=upsert(c,"machine","Yoda/Fedora","Linux worker and replica host.",metadata={"online":True})
     mill=upsert(c,"machine","Millhouse ADB bridge","Windows device/ADB bridge.",metadata={"online":True})

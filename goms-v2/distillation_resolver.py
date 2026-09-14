@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from contextlib import closing
 import json,re,sqlite3,urllib.request
 from datetime import datetime,timezone
 from pathlib import Path
@@ -28,7 +29,7 @@ def call(prompt,model="reason",timeout=120):
       "Content-Type":"application/json","Authorization":"Bearer "+SECRET})
     with urllib.request.urlopen(req,timeout=timeout+30) as r:return json.load(r)
 
-with sqlite3.connect(DB) as c:
+with closing(sqlite3.connect(DB)) as c, c:
     c.row_factory=sqlite3.Row
     c.execute("""CREATE TABLE IF NOT EXISTS distillation_resolutions(
       candidate_id TEXT PRIMARY KEY,subject_entity_id TEXT,object_entity_id TEXT,
@@ -59,7 +60,7 @@ except Exception:
     repair=call("Convert this entity-resolution response into strict JSON matching the requested schema. Preserve meaning; add no facts.\n\n"+raw,model="critic",timeout=90)
     out=parse(repair.get("response",""))
 
-with sqlite3.connect(DB) as c:
+with closing(sqlite3.connect(DB)) as c, c:
     for x in out.get("items",[]):
         cid=x.get("candidate_id")
         if not cid: continue

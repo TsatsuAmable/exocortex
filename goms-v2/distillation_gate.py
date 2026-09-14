@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from contextlib import closing
 import json,sqlite3
 from pathlib import Path
 ROOT=Path.home()/"Library/Application Support/Aineko/GOMS"
@@ -6,7 +7,7 @@ DB=ROOT/"goms.sqlite3"
 THRESHOLD=0.93
 ALLOWED={"durable_current","preference_current"}
 
-with sqlite3.connect(DB) as c:
+with closing(sqlite3.connect(DB)) as c, c:
     c.row_factory=sqlite3.Row
     c.execute("""CREATE TABLE IF NOT EXISTS distillation_ready(
       candidate_id TEXT PRIMARY KEY,status TEXT NOT NULL,confidence REAL NOT NULL,
