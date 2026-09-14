@@ -74,9 +74,10 @@ class ManfredControl:
         finally:
             con.close()
 
-    def build_brief(self, limit: int = 50) -> dict:
+    def build_brief(self, limit: int = 50, *, reconcile: bool = True) -> dict:
         limit = max(1, min(int(limit), 200))
-        reconcile_attention_intents(self.db.parent)
+        if reconcile:
+            reconcile_attention_intents(self.db.parent)
         with self._connect() as con:
             con.execute("BEGIN")
             attention = [dict(r) for r in con.execute("""

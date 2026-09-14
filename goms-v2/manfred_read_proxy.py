@@ -4,9 +4,11 @@ import argparse,ipaddress,json,os
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
 from manfred_control import ManfredControl
+from manfred_projection import build_projection
 
 LOOPBACK_HOSTS={"127.0.0.1","localhost","::1"}
 TAILNET_V4=ipaddress.ip_network("100.64.0.0/10")
+MAX_PROJECTION_BODY=32*1024
 
 def _tailnet_ipv4(value):
     try:
@@ -48,7 +50,23 @@ class Handler(BaseHTTPRequestHandler):
         self._json(200,{"ok":True,"brief":self.server.control.build_brief()})
     def do_POST(self):
         if not self._peer_ok(): return
-        self._json(405,{"ok":False,"error":"method_not_allowed"})
+        if self.path!="/v1/manfred/projection":
+            self._json(405,{"ok":False,"error":"method_not_allowed"}); return
+        try:
+            length=int(self.headers.get("Content-Length") or "0")
+        except ValueError:
+            self._json(400,{"ok":False,"error":"invalid_content_length"}); return
+        if length>MAX_PROJECTION_BODY:
+            self._json(413,{"ok":False,"error":"body_too_large"}); return
+        try:
+            raw=self.rfile.read(length) if length else b"{}"
+            capabilities=json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError,json.JSONDecodeError):
+            self._json(400,{"ok":False,"error":"invalid_json"}); return
+        if not isinstance(capabilities,dict):
+            self._json(400,{"ok":False,"error":"invalid_capabilities"}); return
+        projection=build_projection(self.server.control,capabilities)
+        self._json(200,{"ok":True,"projection":projection})
 
 def create_server(root:str|Path,*,host:str="127.0.0.1",port:int=8794,allowed_client=None):
     validate_bind(host,allowed_client)

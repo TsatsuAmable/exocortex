@@ -131,7 +131,7 @@ def build_projection(control, capabilities: dict) -> dict:
     capabilities = capabilities if isinstance(capabilities, dict) else {}
     components = _strings(capabilities.get("components"))
     actions = _strings(capabilities.get("actions"))
-    brief = control.build_brief()
+    brief = control.build_brief(reconcile=False)
     mismatches: list[dict] = []
     intents = [
         _project_intent(intent, components, actions, mismatches)
