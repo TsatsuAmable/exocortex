@@ -294,3 +294,54 @@ CREATE TABLE IF NOT EXISTS manfred_commands (
 );
 CREATE INDEX IF NOT EXISTS idx_manfred_commands_status
   ON manfred_commands(status,updated_at);
+CREATE TABLE IF NOT EXISTS control_intents (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  summary TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL,
+  priority TEXT NOT NULL DEFAULT 'P2',
+  risk_tier TEXT NOT NULL DEFAULT 'normal',
+  execution_policy TEXT NOT NULL DEFAULT 'HUMAN_ONLY',
+  source TEXT,
+  source_ref TEXT,
+  provenance TEXT NOT NULL DEFAULT '{}',
+  evidence_refs TEXT NOT NULL DEFAULT '[]',
+  recommended_action TEXT NOT NULL DEFAULT '{}',
+  alternatives TEXT NOT NULL DEFAULT '[]',
+  decision_required INTEGER NOT NULL DEFAULT 1,
+  origin_conversation_id TEXT,
+  origin_conversation_url TEXT,
+  execution_conversation_id TEXT,
+  execution_conversation_url TEXT,
+  verification_policy TEXT NOT NULL DEFAULT '{}',
+  outcome TEXT NOT NULL DEFAULT '{}',
+  acknowledged_at TEXT,
+  resolved_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_control_intents_status
+  ON control_intents(status, priority, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_control_intents_source
+  ON control_intents(source, source_ref);
+CREATE TABLE IF NOT EXISTS control_intent_events (
+  id TEXT PRIMARY KEY,
+  intent_id TEXT NOT NULL REFERENCES control_intents(id),
+  event_type TEXT NOT NULL,
+  from_status TEXT,
+  to_status TEXT,
+  actor TEXT NOT NULL,
+  detail TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_control_intent_events_intent
+  ON control_intent_events(intent_id, created_at);
+
+CREATE TABLE IF NOT EXISTS attention_control_intents (
+  attention_id TEXT PRIMARY KEY,
+  intent_id TEXT NOT NULL UNIQUE REFERENCES control_intents(id),
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_attention_control_intents_intent
+  ON attention_control_intents(intent_id);
