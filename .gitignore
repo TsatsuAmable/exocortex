@@ -22,3 +22,5 @@ goms-v2/*heartbeat*.json
 goms-v2/distillation_gold.json
 
 !goms-v2/uv.lock
+
+.worktrees/
