@@ -10,11 +10,13 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from goms_store import GomsStore, BRANCH_STATUSES
+from goms_store import GomsStore, BRANCH_STATUSES, make_id
+from control_intents import ControlIntentService
 from control_intent_reconciler import reconcile_attention_intents
 
 TERMINAL_COMMAND_STATUSES = {"SUCCESS", "REJECTED", "FAILED", "UNKNOWN"}
 MAX_PENDING_AGE_SECONDS = 300
+MAX_INTENT_EXECUTION_AGE_SECONDS = 300
 
 
 def _is_stale(timestamp: str | None, max_age_seconds: int) -> bool:
@@ -49,9 +51,15 @@ def command_fingerprint(command_type: str, target_id: str, payload) -> str:
 
 
 class ManfredControl:
-    def __init__(self, db_path: str | Path):
+    def __init__(self, db_path: str | Path, intent_executors: dict | None = None):
         self.db = Path(db_path)
         self.store = GomsStore(self.db.parent)
+        self.intents = ControlIntentService(self.db.parent)
+        defaults = {
+            "checkpoint_branch": self._checkpoint_branch,
+            "resolve_attention": self._resolve_attention,
+        }
+        self.intent_executors = defaults if intent_executors is None else dict(intent_executors)
 
     @contextmanager
     def _connect(self):
@@ -201,9 +209,18 @@ class ManfredControl:
                 result = self._resolve_attention(target, payload)
             elif ctype == "checkpoint_branch":
                 result = self._checkpoint_branch(target, payload)
+            elif ctype in {"approve_intent", "reject_intent", "defer_intent", "confirm_intent"}:
+                result = self._execute_intent_command(ctype, target, payload)
             else:
                 result = {"ok": False, "error": "unsupported_command"}
-            status = "SUCCESS" if result.get("ok") else "REJECTED"
+            if result.get("ok"):
+                status = "SUCCESS"
+            elif result.get("error") == "intent_execution_failed":
+                status = "FAILED"
+            elif result.get("error") == "intent_outcome_unknown":
+                status = "UNKNOWN"
+            else:
+                status = "REJECTED"
         except Exception:
             result = {"ok": False, "error": "command_failed"}
             status = "FAILED"
@@ -212,6 +229,143 @@ class ManfredControl:
         except sqlite3.Error:
             return {"ok": False, "error": "command_outcome_unknown"}
         return result
+
+    def _execute_intent_command(self, ctype: str, intent_id: str, payload: dict) -> dict:
+        try:
+            intent = self.intents.get(intent_id)
+        except KeyError:
+            return {"ok": False, "error": "intent_not_found"}
+
+        current = str(intent["status"])
+        if current in {"EXECUTING", "VERIFYING"}:
+            if _is_stale(intent.get("updated_at"), MAX_INTENT_EXECUTION_AGE_SECONDS):
+                try:
+                    self.intents.mark_active_execution_unknown(intent_id)
+                    self.intents.transition(
+                        intent_id, current, "OUTCOME_UNKNOWN",
+                        {"actor": "system:manfred-control", "reason": "stale_execution"},
+                    )
+                except (KeyError, ValueError):
+                    pass
+                return {"ok": False, "error": "intent_outcome_unknown",
+                        "intent_id": intent_id, "intent_status": "OUTCOME_UNKNOWN"}
+            return {"ok": False, "error": "intent_in_progress", "intent_id": intent_id}
+
+        actor = str(payload.get("resolved_by") or "").strip()
+        if not actor:
+            return {"ok": False, "error": "resolved_by_required"}
+
+        if ctype == "reject_intent":
+            return self._decide_without_execution(intent_id, "REJECT", actor, payload)
+        if ctype == "defer_intent":
+            return self._decide_without_execution(intent_id, "DEFER", actor, payload)
+        if ctype == "approve_intent":
+            if current not in {"NEEDS_DECISION", "ESCALATED"}:
+                return {"ok": False, "error": "intent_not_decidable"}
+            try:
+                approved = self.intents.decide(intent_id, "APPROVE", actor, payload)
+            except (KeyError, ValueError):
+                return {"ok": False, "error": "intent_not_decidable"}
+            policy = str(approved["execution_policy"])
+            if policy == "HUMAN_ONLY":
+                return {"ok": True, "intent_id": intent_id, "intent_status": "APPROVED",
+                        "human_only": True, "execution_started": False}
+            if policy == "CONFIRM_HIGH_RISK":
+                return {"ok": True, "intent_id": intent_id, "intent_status": "APPROVED",
+                        "confirmation_required": True, "execution_started": False}
+            return self._run_intent_execution(intent_id, actor, payload)
+        if ctype == "confirm_intent":
+            if current != "APPROVED" or str(intent["execution_policy"]) != "CONFIRM_HIGH_RISK":
+                return {"ok": False, "error": "intent_not_confirmable"}
+            return self._run_intent_execution(intent_id, actor, payload)
+        return {"ok": False, "error": "unsupported_command"}
+
+    def _decide_without_execution(self, intent_id: str, decision: str,
+                                  actor: str, payload: dict) -> dict:
+        intent = self.intents.get(intent_id)
+        if str(intent["status"]) not in {"NEEDS_DECISION", "ESCALATED"}:
+            return {"ok": False, "error": "intent_not_decidable"}
+        try:
+            updated = self.intents.decide(intent_id, decision, actor, payload)
+        except (KeyError, ValueError):
+            return {"ok": False, "error": "intent_not_decidable"}
+        return {"ok": True, "intent_id": intent_id, "intent_status": updated["status"],
+                "execution_started": False}
+
+    def _run_intent_execution(self, intent_id: str, actor: str, command_payload: dict) -> dict:
+        try:
+            intent = self.intents.get(intent_id)
+            if str(intent["status"]) != "APPROVED":
+                return {"ok": False, "error": "intent_not_executable"}
+            action = intent.get("recommended_action") or {}
+            action_type = str(action.get("type") or "")
+            target_id = str(action.get("target_id") or "")
+            action_payload = action.get("payload") or {}
+            if not isinstance(action_payload, dict) or action_type not in self.intent_executors:
+                return {"ok": False, "error": "intent_executor_not_allowed"}
+            action_payload = dict(action_payload)
+            for field in ("human_attested", "resolved_by"):
+                if field in command_payload:
+                    action_payload[field] = command_payload[field]
+
+            try:
+                attempt_id = self.intents.claim_execution(
+                    intent_id, actor, action_type, target_id)
+            except (KeyError, ValueError):
+                return {"ok": False, "error": "intent_not_executable"}
+            try:
+                effect = self.intent_executors[action_type](target_id, action_payload)
+            except Exception as exc:
+                failure = {"reason": "executor_exception", "exception": type(exc).__name__}
+                self.intents.finish_execution_attempt(attempt_id, "FAILED", failure)
+                self.intents.transition(intent_id, "EXECUTING", "FAILED",
+                                        {"actor": actor, **failure,
+                                         "execution_attempt_id": attempt_id})
+                return {"ok": False, "error": "intent_execution_failed",
+                        "intent_id": intent_id, "intent_status": "FAILED",
+                        "execution_attempt_id": attempt_id}
+            if not isinstance(effect, dict) or effect.get("ok") is not True:
+                failure = {"reason": "executor_rejected",
+                           "result": effect if isinstance(effect, dict) else {}}
+                self.intents.finish_execution_attempt(attempt_id, "FAILED", failure)
+                self.intents.transition(intent_id, "EXECUTING", "FAILED",
+                                        {"actor": actor, **failure,
+                                         "execution_attempt_id": attempt_id})
+                return {"ok": False, "error": "intent_execution_failed",
+                        "intent_id": intent_id, "intent_status": "FAILED",
+                        "execution_attempt_id": attempt_id}
+
+            self.intents.transition(intent_id, "EXECUTING", "VERIFYING",
+                                    {"actor": actor, "effect": effect,
+                                     "execution_attempt_id": attempt_id})
+            if not self._verify_intent_action(action_type, target_id, action_payload):
+                failure = {"reason": "verification_failed", "effect": effect}
+                self.intents.finish_execution_attempt(attempt_id, "FAILED", failure)
+                self.intents.transition(intent_id, "VERIFYING", "FAILED",
+                                        {"actor": actor, **failure,
+                                         "execution_attempt_id": attempt_id})
+                return {"ok": False, "error": "intent_verification_failed",
+                        "intent_id": intent_id, "intent_status": "FAILED",
+                        "execution_attempt_id": attempt_id}
+            self.intents.finish_execution_attempt(attempt_id, "SUCCESS", effect)
+            self.intents.transition(intent_id, "VERIFYING", "RESOLVED",
+                                    {"actor": actor, "verification": "canonical_state",
+                                     "execution_attempt_id": attempt_id})
+            return {"ok": True, "intent_id": intent_id, "intent_status": "RESOLVED",
+                    "execution_started": True, "execution_attempt_id": attempt_id,
+                    "effect": effect}
+        except (KeyError, ValueError):
+            return {"ok": False, "error": "intent_not_executable"}
+
+    def _verify_intent_action(self, action_type: str, target_id: str, payload: dict) -> bool:
+        with self._connect() as con:
+            if action_type == "checkpoint_branch":
+                row = con.execute("SELECT status FROM branches WHERE id=?", (target_id,)).fetchone()
+                return bool(row) and str(row["status"]) == str(payload.get("status") or "").upper()
+            if action_type == "resolve_attention":
+                row = con.execute("SELECT status FROM attention_items WHERE id=?", (target_id,)).fetchone()
+                return bool(row) and str(row["status"]) == "resolved"
+        return False
 
     def _resolve_attention(self, attention_id: str, payload: dict | None = None) -> dict:
         payload = payload or {}

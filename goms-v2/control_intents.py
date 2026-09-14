@@ -212,6 +212,73 @@ class ControlIntentService:
                                  "intent_id": intent_id, "from": current, "to": new_status})
         return self.get(intent_id)
 
+    def claim_execution(self, intent_id: str, actor: str,
+                        action_type: str, target_id: str) -> str:
+        actor = str(actor or "").strip()
+        if not actor:
+            raise ValueError("actor is required")
+        action_type = str(action_type or "").strip()
+        target_id = str(target_id or "").strip()
+        if not action_type or not target_id:
+            raise ValueError("execution action and target are required")
+        with self.store.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            row = con.execute("SELECT status FROM control_intents WHERE id=?", (intent_id,)).fetchone()
+            if not row:
+                raise KeyError(f"Unknown control intent: {intent_id}")
+            current = str(row["status"])
+            if current != "APPROVED":
+                raise ValueError(f"status mismatch: expected APPROVED, found {current}")
+            existing = con.execute(
+                "SELECT id FROM control_intent_execution_attempts WHERE intent_id=?",
+                (intent_id,),
+            ).fetchone()
+            if existing:
+                raise ValueError("execution already claimed")
+            attempt_id = make_id("intent_attempt")
+            ts = now()
+            con.execute("""INSERT INTO control_intent_execution_attempts
+              (id,intent_id,action_type,target_id,status,result,started_at,completed_at)
+              VALUES(?,?,?,?,?,'{}',?,NULL)""",
+              (attempt_id, intent_id, action_type, target_id, "EXECUTING", ts))
+            con.execute("UPDATE control_intents SET status='EXECUTING',updated_at=? WHERE id=?",
+                        (ts, intent_id))
+            self._event(con, intent_id, "transition", actor,
+                        {"execution_attempt_id": attempt_id,
+                         "action_type": action_type, "target_id": target_id},
+                        "APPROVED", "EXECUTING")
+        self.store.append_event({"op": "control_intent_execution_claim", "actor": actor,
+                                 "intent_id": intent_id,
+                                 "execution_attempt_id": attempt_id,
+                                 "action_type": action_type, "target_id": target_id})
+        return attempt_id
+
+    def finish_execution_attempt(self, attempt_id: str, status: str, result: dict) -> None:
+        status = str(status or "").upper()
+        if status not in {"SUCCESS", "FAILED", "UNKNOWN"}:
+            raise ValueError("invalid execution attempt status")
+        with self.store.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            row = con.execute("SELECT intent_id FROM control_intent_execution_attempts WHERE id=?",
+                              (attempt_id,)).fetchone()
+            if not row:
+                raise KeyError(f"Unknown execution attempt: {attempt_id}")
+            con.execute("""UPDATE control_intent_execution_attempts
+              SET status=?,result=?,completed_at=? WHERE id=?""",
+              (status, _dumps(result or {}), now(), attempt_id))
+        self.store.append_event({"op": "control_intent_execution_finish",
+                                 "actor": "system:manfred-control",
+                                 "intent_id": row["intent_id"],
+                                 "execution_attempt_id": attempt_id,
+                                 "status": status})
+
+    def mark_active_execution_unknown(self, intent_id: str) -> None:
+        with self.store.connect() as con:
+            con.execute("BEGIN IMMEDIATE")
+            con.execute("""UPDATE control_intent_execution_attempts
+              SET status='UNKNOWN',completed_at=?
+              WHERE intent_id=? AND status='EXECUTING'""", (now(), intent_id))
+
     def decide(self, intent_id: str, decision: str, actor: str, payload: dict | None = None) -> dict:
         decision = str(decision or "").upper()
         targets = {"APPROVE": "APPROVED", "REJECT": "REJECTED", "DEFER": "DEFERRED"}

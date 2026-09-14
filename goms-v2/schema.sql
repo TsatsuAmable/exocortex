@@ -338,6 +338,19 @@ CREATE TABLE IF NOT EXISTS control_intent_events (
 CREATE INDEX IF NOT EXISTS idx_control_intent_events_intent
   ON control_intent_events(intent_id, created_at);
 
+CREATE TABLE IF NOT EXISTS control_intent_execution_attempts (
+  id TEXT PRIMARY KEY,
+  intent_id TEXT NOT NULL UNIQUE REFERENCES control_intents(id),
+  action_type TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  result TEXT NOT NULL DEFAULT '{}',
+  started_at TEXT NOT NULL,
+  completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_control_intent_execution_attempts_status
+  ON control_intent_execution_attempts(status, started_at);
+
 CREATE TABLE IF NOT EXISTS attention_control_intents (
   attention_id TEXT PRIMARY KEY,
   intent_id TEXT NOT NULL UNIQUE REFERENCES control_intents(id),
