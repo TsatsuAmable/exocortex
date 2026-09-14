@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 from goms_store import GomsStore
+from alerts import AlertService
 from manfred_control import ManfredControl, authorized
 
 
@@ -40,6 +41,18 @@ class ManfredControlTests(unittest.TestCase):
         self.assertEqual(brief["attention"][0]["id"], "attn_1")
         self.assertEqual(brief["governor"][0]["disposition"], "HUMAN_REQUIRED")
         self.assertEqual(brief["branches"][0]["id"], branch)
+
+    def test_brief_reconciliation_materializes_canonical_alerts(self):
+        with closing(sqlite3.connect(self.root / "goms.sqlite3")) as c, c:
+            c.execute("""insert into attention_items
+              (id,category,severity,title,summary,status,suggested_actions,source,created_at,updated_at)
+              values('attn_alert','test','warning','Needs attention','x','open','[]','test','now','now')""")
+        brief = self.ctl.build_brief()
+        intent_id = next(x["intent_id"] for x in brief["attention"] if x["id"] == "attn_alert")
+        alerts = AlertService(self.root).list_active()
+        self.assertEqual(len(alerts), 1)
+        self.assertEqual(alerts[0]["intent_id"], intent_id)
+        self.assertEqual(alerts[0]["severity"], "ACTION_REQUIRED")
 
     def test_resolve_attention_is_idempotent_and_recorded(self):
         with closing(sqlite3.connect(self.root / "goms.sqlite3")) as c, c:

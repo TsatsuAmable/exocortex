@@ -22,7 +22,10 @@ from manfred_control import ManfredControl
 TAILNET_V4 = ipaddress.ip_network("100.64.0.0/10")
 MAX_BODY = 64 * 1024
 MAX_CLOCK_SKEW_SECONDS = 120
-ALLOWED_COMMANDS = {"approve_intent", "reject_intent", "defer_intent", "confirm_intent"}
+ALLOWED_COMMANDS = {
+    "approve_intent", "reject_intent", "defer_intent", "confirm_intent",
+    "mark_alert_delivered", "mark_alert_seen", "acknowledge_alert",
+}
 
 
 def _tailnet_ipv4(value: str | None) -> bool:
@@ -163,12 +166,13 @@ class Handler(BaseHTTPRequestHandler):
             status = 200
         elif error in {"command_in_progress", "idempotency_key_reused", "intent_in_progress"}:
             status = 409
-        elif error in {"human_attestation_required", "resolved_by_required"}:
+        elif error in {"human_attestation_required", "resolved_by_required",
+                       "human_actor_required", "device_actor_required"}:
             status = 403
         elif error in {"command_claim_failed", "command_outcome_unknown",
                        "intent_outcome_unknown", "command_failed"}:
             status = 503
-        elif error in {"intent_not_found"}:
+        elif error in {"intent_not_found", "alert_not_found"}:
             status = 404
         else:
             status = 400

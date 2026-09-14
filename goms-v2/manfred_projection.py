@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from alerts import AlertService
+
 SCHEMA_VERSION = "1.0"
 ACTIONABLE_LOCATOR_SOURCES = {"observed", "supplied"}
 AUTHORITY_ACTIONS = {"APPROVE", "REJECT", "DEFER", "CONFIRM"}
@@ -138,9 +140,11 @@ def build_projection(control, capabilities: dict) -> dict:
         for intent in brief.get("intents", [])
         if isinstance(intent, dict)
     ]
+    alerts = AlertService(control.db.parent).list_active()
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": _now(),
         "intents": intents,
+        "alerts": alerts,
         "capability_mismatches": mismatches,
     }

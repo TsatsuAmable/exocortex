@@ -87,6 +87,13 @@ class AlertServiceTests(unittest.TestCase):
         self.set_alert_policy(intent_id, severity="INFO")
         alert = self.alerts.reconcile_intent(intent_id)
         self.assertEqual(alert["severity"], "INFO")
+
+    def test_machine_owned_execution_defaults_to_info(self):
+        intent_id = self.add_attention("attn_executing")
+        with self.store.connect() as con:
+            con.execute("UPDATE control_intents SET status='EXECUTING' WHERE id=?", (intent_id,))
+        alert = self.alerts.reconcile_intent(intent_id)
+        self.assertEqual(alert["severity"], "INFO")
     def test_expiry_resolves_without_realerting_unchanged_intent(self):
         intent_id = self.add_attention("attn_expire")
         self.set_alert_policy(intent_id, ttl_seconds=60)

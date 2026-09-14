@@ -90,6 +90,8 @@ class AlertService:
         category = str(provenance.get("category") or "").lower() if isinstance(provenance, dict) else ""
         if intent.get("risk_tier") == "high" and category in {"security", "safety"}:
             return "CRITICAL"
+        if str(intent.get("status") or "").upper() in {"EXECUTING", "VERIFYING"}:
+            return "INFO"
         if bool(intent.get("decision_required", True)):
             return "ACTION_REQUIRED"
         return "INFO"

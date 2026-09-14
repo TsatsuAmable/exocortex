@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from control_intents import ControlIntentService
+from alerts import AlertService
 from goms_store import GomsStore
 from manfred_control import ManfredControl
 
@@ -66,6 +67,20 @@ class IntentExecutionTests(unittest.TestCase):
         self.assertIsNotNone(attempt)
         self.assertEqual(attempt["status"], "SUCCESS")
         self.assertEqual(first["execution_attempt_id"], attempt["id"])
+
+    def test_terminal_intent_outcomes_close_active_alerts(self):
+        alerts = AlertService(self.root)
+        resolved_id, _ = self.make_checkpoint_intent("attn_alert_resolve")
+        resolved_alert = alerts.reconcile_intent(resolved_id)
+        result = self.command("approve-alert-resolve", "approve_intent", resolved_id)
+        self.assertEqual(result["intent_status"], "RESOLVED")
+        self.assertEqual(alerts.get(resolved_alert["id"])["state"], "RESOLVED")
+
+        rejected_id, _ = self.make_checkpoint_intent("attn_alert_reject")
+        rejected_alert = alerts.reconcile_intent(rejected_id)
+        rejected = self.command("reject-alert", "reject_intent", rejected_id)
+        self.assertEqual(rejected["intent_status"], "REJECTED")
+        self.assertEqual(alerts.get(rejected_alert["id"])["state"], "RESOLVED")
 
     def test_concurrent_different_keys_execute_only_once(self):
         intent_id, branch = self.make_checkpoint_intent("attn_concurrent")

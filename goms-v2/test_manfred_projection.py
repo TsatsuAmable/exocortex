@@ -6,6 +6,7 @@ from pathlib import Path
 
 from goms_store import GomsStore
 from control_intents import ControlIntentService
+from alerts import AlertService
 from manfred_control import ManfredControl
 from manfred_projection import build_projection
 
@@ -23,6 +24,7 @@ class ManfredProjectionTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.store = GomsStore(self.root)
         self.svc = ControlIntentService(self.root)
+        self.alerts = AlertService(self.root)
         self.control = ManfredControl(self.root / "goms.sqlite3")
 
     def tearDown(self):
@@ -98,6 +100,23 @@ class ManfredProjectionTests(unittest.TestCase):
         intent = next(x for x in brief["intents"] if x["id"] == intent_id)
         self.assertEqual(intent["evidence_refs"], ["ev_alpha"])
         self.assertEqual(intent["provenance"]["conversation_locators"]["origin"]["source"], "observed")
+
+    def test_projection_includes_active_alerts_in_severity_order(self):
+        normal_id, _ = self.make_intent("attn_alert_normal")
+        critical_id, _ = self.make_intent("attn_alert_critical", severity="critical")
+        with self.store.connect() as con:
+            row = con.execute("SELECT provenance FROM control_intents WHERE id=?", (critical_id,)).fetchone()
+            provenance = json.loads(row["provenance"] or "{}")
+            provenance["category"] = "security"
+            con.execute("UPDATE control_intents SET risk_tier='high',provenance=? WHERE id=?",
+                        (json.dumps(provenance), critical_id))
+        self.alerts.reconcile_intent(normal_id)
+        self.alerts.reconcile_intent(critical_id)
+        projection = build_projection(self.control, FULL_CAPS)
+        self.assertEqual([x["severity"] for x in projection["alerts"][:2]],
+                         ["CRITICAL", "ACTION_REQUIRED"])
+        self.assertEqual({x["intent_id"] for x in projection["alerts"]},
+                         {normal_id, critical_id})
 
 
 if __name__ == "__main__":

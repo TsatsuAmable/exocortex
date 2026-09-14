@@ -13,6 +13,7 @@ from pathlib import Path
 from goms_store import GomsStore, BRANCH_STATUSES, make_id
 from control_intents import ControlIntentService
 from control_intent_reconciler import reconcile_attention_intents
+from alerts import AlertService
 
 TERMINAL_COMMAND_STATUSES = {"SUCCESS", "REJECTED", "FAILED", "UNKNOWN"}
 MAX_PENDING_AGE_SECONDS = 300
@@ -55,6 +56,7 @@ class ManfredControl:
         self.db = Path(db_path)
         self.store = GomsStore(self.db.parent)
         self.intents = ControlIntentService(self.db.parent)
+        self.alerts = AlertService(self.db.parent)
         defaults = {
             "checkpoint_branch": self._checkpoint_branch,
             "resolve_attention": self._resolve_attention,
@@ -78,6 +80,8 @@ class ManfredControl:
         limit = max(1, min(int(limit), 200))
         if reconcile:
             reconcile_attention_intents(self.db.parent)
+            for intent in self.intents.list_open(limit=limit):
+                self.alerts.reconcile_intent(intent["id"])
         with self._connect() as con:
             con.execute("BEGIN")
             attention = [dict(r) for r in con.execute("""
@@ -215,6 +219,8 @@ class ManfredControl:
                 result = self._checkpoint_branch(target, payload)
             elif ctype in {"approve_intent", "reject_intent", "defer_intent", "confirm_intent"}:
                 result = self._execute_intent_command(ctype, target, payload)
+            elif ctype in {"mark_alert_delivered", "mark_alert_seen", "acknowledge_alert"}:
+                result = self._execute_alert_command(ctype, target, payload)
             else:
                 result = {"ok": False, "error": "unsupported_command"}
             if result.get("ok"):
@@ -228,11 +234,39 @@ class ManfredControl:
         except Exception:
             result = {"ok": False, "error": "command_failed"}
             status = "FAILED"
+        if ctype in {"approve_intent", "reject_intent", "confirm_intent"} \
+                and result.get("intent_status") in {"RESOLVED", "REJECTED", "FAILED"}:
+            try:
+                self.alerts.resolve_for_intent(target, actor="system:manfred-control")
+            except Exception:
+                result = {**result, "alert_cleanup_pending": True}
         try:
             self._record_finish(key, status, result)
         except sqlite3.Error:
             return {"ok": False, "error": "command_outcome_unknown"}
         return result
+
+    def _execute_alert_command(self, ctype: str, alert_id: str, payload: dict) -> dict:
+        actor = str(payload.get("actor") or "").strip()
+        if not actor:
+            return {"ok": False, "error": "actor_required"}
+        if ctype in {"mark_alert_delivered", "mark_alert_seen"} and not actor.startswith("device:"):
+            return {"ok": False, "error": "device_actor_required"}
+        if ctype == "acknowledge_alert" and not actor.startswith("human:"):
+            return {"ok": False, "error": "human_actor_required"}
+        try:
+            if ctype == "mark_alert_delivered":
+                alert = self.alerts.record_delivery(alert_id, actor)
+            elif ctype == "mark_alert_seen":
+                alert = self.alerts.record_seen(alert_id, actor)
+            else:
+                alert = self.alerts.acknowledge(alert_id, actor)
+        except KeyError:
+            return {"ok": False, "error": "alert_not_found"}
+        except ValueError:
+            return {"ok": False, "error": "alert_state_invalid"}
+        return {"ok": True, "alert_id": alert_id, "alert_state": alert["state"],
+                "intent_id": alert["intent_id"]}
 
     def _execute_intent_command(self, ctype: str, intent_id: str, payload: dict) -> dict:
         try:

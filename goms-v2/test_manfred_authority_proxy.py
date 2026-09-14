@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from control_intents import ControlIntentService
+from alerts import AlertService
 from goms_store import GomsStore
 from manfred_authority_proxy import (
     Handler,
@@ -89,6 +90,18 @@ class ManfredAuthorityProxyTests(unittest.TestCase):
                 return exc.code, json.load(exc)
             finally:
                 exc.close()
+
+    def make_alert(self, suffix="telemetry"):
+        attention_id = f"attn_{suffix}"
+        ts = "2026-09-14T09:00:00+00:00"
+        with self.store.connect() as con:
+            con.execute("""INSERT INTO attention_items
+              (id,category,severity,title,summary,status,suggested_actions,source,created_at,updated_at)
+              VALUES(?,?,?,?,?,'open','[]','test',?,?)""",
+              (attention_id, "test", "warning", "Alert telemetry", "Needs attention", ts, ts))
+        intent_id = ControlIntentService(self.root).ensure_for_attention(attention_id)
+        alert = AlertService(self.root).reconcile_intent(intent_id)
+        return intent_id, alert
 
     def test_production_bind_requires_tailnet_host_and_exact_tailnet_client(self):
         with self.assertRaises(ValueError):
@@ -181,6 +194,42 @@ class ManfredAuthorityProxyTests(unittest.TestCase):
                 con.execute("SELECT count(*) FROM manfred_commands WHERE idempotency_key='proxy-approve-1'").fetchone()[0],
                 1,
             )
+
+    def test_signed_alert_telemetry_preserves_actor_boundaries(self):
+        intent_id, alert = self.make_alert("telemetry_roles")
+        delivered = {
+            "type": "mark_alert_delivered", "target_id": alert["id"],
+            "idempotency_key": "alert-delivered-1", "payload": {"actor": "device:manfred-android"},
+        }
+        status, body = self.post(delivered, request_id="alert-delivered")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["alert_state"], "DELIVERED")
+
+        seen = dict(delivered, type="mark_alert_seen", idempotency_key="alert-seen-1")
+        status, body = self.post(seen, request_id="alert-seen")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["alert_state"], "SEEN")
+
+        device_ack = dict(delivered, type="acknowledge_alert", idempotency_key="alert-ack-device")
+        status, body = self.post(device_ack, request_id="alert-ack-device")
+        self.assertEqual(status, 403)
+        self.assertEqual(body["error"], "human_actor_required")
+
+        human_ack = dict(delivered, type="acknowledge_alert", idempotency_key="alert-ack-human",
+                         payload={"actor": "human:manfred-android"})
+        status, body = self.post(human_ack, request_id="alert-ack-human")
+        self.assertEqual(status, 200)
+        self.assertEqual(body["alert_state"], "ACKNOWLEDGED")
+        self.assertEqual(ControlIntentService(self.root).get(intent_id)["status"], "NEEDS_DECISION")
+
+    def test_unknown_alert_telemetry_returns_not_found(self):
+        command = {
+            "type": "mark_alert_delivered", "target_id": "alert_missing",
+            "idempotency_key": "alert-missing-1", "payload": {"actor": "device:manfred-android"},
+        }
+        status, body = self.post(command, request_id="alert-missing")
+        self.assertEqual(status, 404)
+        self.assertEqual(body["error"], "alert_not_found")
 
 
 if __name__ == "__main__":
