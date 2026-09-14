@@ -6,6 +6,8 @@ import urllib.request
 
 from mcp.server.mcpserver import MCPServer
 from goms_store import GomsStore, ENTITY_TYPES, BRANCH_STATUSES
+from control_intents import ControlIntentService, INTENT_STATUSES
+from manfred_control import ManfredControl
 from neo4j_projection import status as graph_projection_status, rebuild as graph_projection_rebuild, neighbors as graph_neighbors_query, vector_search as graph_vector_search
 
 store = GomsStore()
@@ -22,6 +24,15 @@ server = MCPServer(
 
 def ok(**kwargs):
     return {"ok": True, **kwargs}
+
+
+def _intent_service() -> ControlIntentService:
+    return ControlIntentService(store.root)
+
+
+def _manfred_control() -> ManfredControl:
+    return ManfredControl(store.db)
+
 
 @server.tool(structured_output=True, description="Store a durable typed memory entity with provenance metadata.")
 def remember(entity_type: str, title: str, summary: str = "", project: str | None = None,
@@ -242,6 +253,70 @@ def attention_items(category: str | None = None, limit: int = 50) -> dict[str, A
         except Exception:pass
         out.append(x)
     return ok(items=out)
+
+
+@server.tool(structured_output=True, description="Return one canonical GOMS control intent by ID.")
+def control_intent(intent_id: str) -> dict[str, Any]:
+    try:
+        return ok(intent=_intent_service().get(intent_id))
+    except KeyError:
+        return {"ok": False, "error": "intent_not_found"}
+
+
+@server.tool(structured_output=True, description="List canonical GOMS control intents, optionally filtered by lifecycle status.")
+def control_intents(status: str | None = None, limit: int = 50) -> dict[str, Any]:
+    limit=max(1,min(limit,200))
+    svc=_intent_service()
+    if status is None:
+        return ok(intents=svc.list_open(limit))
+    status=str(status).upper()
+    if status not in INTENT_STATUSES:
+        return {"ok":False,"error":"invalid_intent_status"}
+    with store.connect() as con:
+        ids=[r["id"] for r in con.execute(
+            "SELECT id FROM control_intents WHERE status=? ORDER BY updated_at DESC LIMIT ?",
+            (status,limit)).fetchall()]
+    return ok(intents=[svc.get(intent_id) for intent_id in ids])
+
+
+@server.tool(structured_output=True, description="Record a human decision on a canonical control intent using the shared GOMS authority ledger.")
+def decide_control_intent(intent_id: str, decision: str, idempotency_key: str,
+                          actor: str = "chatgpt", human_attested: bool = False,
+                          resolved_by: str | None = None) -> dict[str, Any]:
+    decision=str(decision or "").upper()
+    commands={"APPROVE":"approve_intent","REJECT":"reject_intent",
+              "DEFER":"defer_intent","CONFIRM":"confirm_intent"}
+    if decision not in commands:
+        return {"ok":False,"error":"unsupported_decision"}
+    actor=str(actor or "").strip()
+    resolved=str(resolved_by or "").strip()
+    if not actor:
+        return {"ok":False,"error":"actor_required"}
+    if decision in {"APPROVE","CONFIRM"} and (human_attested is not True or not resolved):
+        return {"ok":False,"error":"human_attestation_required"}
+    effective_actor=resolved or actor
+    command={"idempotency_key":str(idempotency_key or "").strip(),
+             "type":commands[decision],"target_id":intent_id,
+             "payload":{"actor":actor,"human_attested":bool(human_attested),
+                        "resolved_by":effective_actor}}
+    return _manfred_control().execute_command(command)
+
+
+@server.tool(structured_output=True, description="Link an origin or execution ChatGPT conversation to a canonical control intent.")
+def link_control_intent_conversation(intent_id: str, role: str,
+                                     conversation_id: str | None, url: str | None,
+                                     actor: str = "chatgpt") -> dict[str, Any]:
+    try:
+        intent=_intent_service().link_conversation(
+            intent_id,role,conversation_id,url,actor)
+        return ok(intent=intent)
+    except KeyError:
+        return {"ok":False,"error":"intent_not_found"}
+    except ValueError as exc:
+        error=str(exc)
+        if error == "invalid_conversation_url":
+            return {"ok":False,"error":error}
+        return {"ok":False,"error":"invalid_conversation_link"}
 
 
 @server.tool(structured_output=True, description="Return a compact system resilience summary across cognition, infrastructure and open priority faults.")

@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+from urllib.parse import urlparse
 
 from goms_store import GomsStore, make_id, now
 
@@ -74,6 +75,21 @@ def _bounded_action(actions) -> dict | None:
         if isinstance(action, dict) and action.get("type") in BOUNDED_ACTION_TYPES:
             return dict(action)
     return None
+
+
+def _valid_conversation_url(url: str | None) -> bool:
+    if url is None:
+        return True
+    try:
+        parsed = urlparse(str(url))
+    except ValueError:
+        return False
+    host = (parsed.hostname or "").lower()
+    accepted = (
+        host == "chatgpt.com" or host.endswith(".chatgpt.com") or
+        host == "openai.com" or host.endswith(".openai.com")
+    )
+    return parsed.scheme == "https" and accepted and not parsed.username and not parsed.password
 
 
 class ControlIntentService:
@@ -314,6 +330,8 @@ class ControlIntentService:
         actor = str(actor or "").strip()
         if not actor:
             raise ValueError("actor is required")
+        if not _valid_conversation_url(url):
+            raise ValueError("invalid_conversation_url")
         id_col = f"{role}_conversation_id"
         url_col = f"{role}_conversation_url"
         with self.store.connect() as con:
