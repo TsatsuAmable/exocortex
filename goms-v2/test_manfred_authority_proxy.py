@@ -12,7 +12,7 @@ from pathlib import Path
 
 from control_intents import ControlIntentService
 from goms_store import GomsStore
-from manfred_authority_proxy import Server, Handler, validate_bind
+from manfred_authority_proxy import Server, Handler, load_key_file, validate_bind
 
 
 class ManfredAuthorityProxyTests(unittest.TestCase):
@@ -60,6 +60,15 @@ class ManfredAuthorityProxyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_bind("100.109.209.29", "192.168.1.128")
         validate_bind("100.109.209.29", "100.73.215.97")
+
+    def test_key_file_must_be_private(self):
+        key_file = self.root / "ingress.key"
+        key_file.write_bytes(b"0123456789abcdef0123456789abcdef")
+        key_file.chmod(0o644)
+        with self.assertRaises(ValueError):
+            load_key_file(key_file)
+        key_file.chmod(0o600)
+        self.assertEqual(load_key_file(key_file), b"0123456789abcdef0123456789abcdef")
 
     def test_wrong_peer_is_forbidden_before_auth(self):
         self.server.allowed_client = "100.73.215.97"
