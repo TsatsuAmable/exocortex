@@ -67,6 +67,7 @@ with closing(sqlite3.connect(DB)) as c, c:
       "org.agalmic.goms-manfred-sync",
       "org.aineko.goms-manfred-control",
       "org.aineko.goms-manfred-read",
+      "org.aineko.goms-manfred-authority",
       "org.agalmic.aineko-vault-git-sync",
     ]
     rc,out,err=run(["launchctl","list"])

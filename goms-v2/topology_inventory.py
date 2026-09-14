@@ -38,12 +38,13 @@ with closing(sqlite3.connect(DB)) as c, c:
     msync=upsert(c,"routine","GOMS↔Manfred sync","Observed Manfred/GOMS synchronisation.")
     mcontrol=upsert(c,"service","GOMS Manfred authority","Loopback-only authenticated authority endpoint.")
     mread=upsert(c,"service","GOMS Manfred read projection","Read-only brief exposed through authenticated tailnet transport.")
+    mauth=upsert(c,"service","GOMS Manfred signed authority ingress","HMAC-authenticated tailnet-only intent authority ingress.")
     goms=upsert(c,"data_store","Canonical GOMS","Canonical cognitive state and ledger.")
     raw=upsert(c,"data_store","ChatGPT raw evidence archive","Durable raw conversation evidence.")
     graph=upsert(c,"data_store","Neo4j GOMS projection","Rebuildable semantic/vector projection.")
     manfred=upsert(c,"interface","Manfred control plane","Human-facing control surface.",status="declared")
     committees=upsert(c,"committee","Adversarial review committees","Multi-model review and critique.",status="declared")
-    for x in [ollama,neo,broker,hermes,whatsapp,extension,native,ingest,repl,sem,vault,msync,mcontrol,mread,goms,raw,graph]:
+    for x in [ollama,neo,broker,hermes,whatsapp,extension,native,ingest,repl,sem,vault,msync,mcontrol,mread,mauth,goms,raw,graph]:
         rel(c,x,"runs_on",mac)
     rel(c,extension,"sends_to",native); rel(c,native,"writes_to",raw)
     rel(c,ingest,"reads_from",raw); rel(c,ingest,"writes_to",goms)
