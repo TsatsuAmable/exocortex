@@ -86,13 +86,16 @@ class AlertService:
         explicit = str(policy.get("severity") or "").upper()
         if explicit in SEVERITIES:
             return explicit
+        status = str(intent.get("status") or "").upper()
+        if status in {"APPROVED", "EXECUTING", "VERIFYING"}:
+            return "INFO"
         provenance = intent.get("provenance") or {}
         category = str(provenance.get("category") or "").lower() if isinstance(provenance, dict) else ""
-        if intent.get("risk_tier") == "high" and category in {"security", "safety"}:
+        if status in {"NEEDS_DECISION", "ESCALATED"} \
+                and intent.get("risk_tier") == "high" and category in {"security", "safety"}:
             return "CRITICAL"
-        if str(intent.get("status") or "").upper() in {"EXECUTING", "VERIFYING"}:
-            return "INFO"
-        if bool(intent.get("decision_required", True)):
+        if status in {"NEEDS_DECISION", "ESCALATED"} \
+                and bool(intent.get("decision_required", True)):
             return "ACTION_REQUIRED"
         return "INFO"
 
@@ -112,6 +115,13 @@ class AlertService:
         return con.execute("""SELECT * FROM alerts WHERE dedupe_key=?
             ORDER BY raised_at DESC,id DESC LIMIT 1""", (dedupe_key,)).fetchone()
 
+    def _attention_source_cleared(self, intent_id: str) -> bool:
+        with self.store.connect() as con:
+            row = con.execute("""SELECT ai.status FROM attention_control_intents aci
+                JOIN attention_items ai ON ai.id=aci.attention_id
+                WHERE aci.intent_id=?""", (intent_id,)).fetchone()
+        return bool(row and str(row["status"]).lower() == "resolved")
+
     def _ledger(self, op: str, actor: str, alert: dict, **extra):
         event = {"op": op, "actor": actor, "alert_id": alert["id"],
                  "intent_id": alert["intent_id"], "state": alert["state"],
@@ -123,6 +133,10 @@ class AlertService:
         intent = self.intents.get(intent_id)
         if intent["status"] in TERMINAL_INTENT_STATES:
             self.resolve_for_intent(intent_id, actor="system:alert-reconciler")
+            return None
+        if self._attention_source_cleared(intent_id):
+            self.resolve_for_intent(intent_id, actor="system:alert-reconciler",
+                                    reason="source_cleared")
             return None
         policy = self._policy(intent)
         severity = self._severity(intent, policy)
@@ -263,7 +277,8 @@ class AlertService:
             return True
         raise ValueError(f"unsupported alert state transition: {target}")
 
-    def resolve_for_intent(self, intent_id: str, actor: str = "system:alert-reconciler") -> int:
+    def resolve_for_intent(self, intent_id: str, actor: str = "system:alert-reconciler",
+                           reason: str = "intent_resolved") -> int:
         ts = self._ts()
         resolved = []
         with self.store.connect() as con:
@@ -272,10 +287,10 @@ class AlertService:
                 WHERE intent_id=? AND state <> 'RESOLVED'""", (intent_id,)).fetchall()
             for row in rows:
                 con.execute("""UPDATE alerts SET state='RESOLVED',resolved_at=?,
-                    resolution_reason='intent_resolved',updated_at=? WHERE id=?""",
-                    (ts, ts, row["id"]))
+                    resolution_reason=?,updated_at=? WHERE id=?""",
+                    (ts, reason, ts, row["id"]))
                 resolved.append(self._decode(con.execute(
                     "SELECT * FROM alerts WHERE id=?", (row["id"],)).fetchone()))
         for alert in resolved:
-            self._ledger("alert_resolved", actor, alert, reason="intent_resolved")
+            self._ledger("alert_resolved", actor, alert, reason=reason)
         return len(resolved)

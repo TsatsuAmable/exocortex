@@ -138,3 +138,28 @@ class AlertServiceTests(unittest.TestCase):
         self.assertEqual(due["id"], alert["id"])
         self.assertEqual(due["escalation_count"], 1)
         self.assertIsNotNone(due["last_escalated_at"])
+
+    def test_resolved_attention_source_closes_alert_without_rewriting_intent(self):
+        intent_id = self.add_attention("attn_source_cleared")
+        alert = self.alerts.reconcile_intent(intent_id)
+        with self.store.connect() as con:
+            con.execute("UPDATE attention_items SET status='resolved',updated_at=? WHERE id=?",
+                        (self.clock().isoformat(), "attn_source_cleared"))
+        self.assertIsNone(self.alerts.reconcile_intent(intent_id))
+        closed = self.alerts.get(alert["id"])
+        self.assertEqual(closed["state"], "RESOLVED")
+        self.assertEqual(closed["resolution_reason"], "source_cleared")
+        self.assertEqual(self.intents.get(intent_id)["status"], "NEEDS_DECISION")
+
+    def test_lifecycle_state_controls_default_severity_but_explicit_urgent_wins(self):
+        intent_id = self.add_attention("attn_lifecycle_severity")
+        first = self.alerts.reconcile_intent(intent_id)
+        self.assertEqual(first["severity"], "ACTION_REQUIRED")
+        with self.store.connect() as con:
+            con.execute("UPDATE control_intents SET status='APPROVED',updated_at=? WHERE id=?",
+                        (self.clock().isoformat(), intent_id))
+        approved = self.alerts.reconcile_intent(intent_id)
+        self.assertEqual(approved["severity"], "INFO")
+        self.set_alert_policy(intent_id, severity="URGENT")
+        explicit = self.alerts.reconcile_intent(intent_id)
+        self.assertEqual(explicit["severity"], "URGENT")
