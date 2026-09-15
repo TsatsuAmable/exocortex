@@ -4,6 +4,8 @@ import hashlib, json, re, sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+from repository_reconciliation import reconcile_repository_tasks
+
 ROOT=Path.home()/"Library/Application Support/Aineko/GOMS"
 DB=ROOT/"goms.sqlite3"
 
@@ -33,6 +35,8 @@ CAPABILITY_HINTS={
 
 def now(): return datetime.now(timezone.utc).isoformat()
 def sid(kind,name): return kind+"_"+hashlib.sha256(name.encode()).hexdigest()[:20]
+
+repository_reconciliations=reconcile_repository_tasks(ROOT)
 
 def ensure_scarcity(c,name):
     eid=sid("scarcity",name)
@@ -133,5 +137,6 @@ with closing(sqlite3.connect(DB)) as c, c:
     print(json.dumps({
       "states":counts,
       "blocked_with_scarcity":c.execute("select count(*) from agalmic_reconciliations where task_state='BLOCKED' and scarcity_type is not null").fetchone()[0],
-      "matched_capabilities":c.execute("select count(*) from agalmic_reconciliations where capability_entity_id is not null").fetchone()[0]
+      "matched_capabilities":c.execute("select count(*) from agalmic_reconciliations where capability_entity_id is not null").fetchone()[0],
+      "repository_reconciliations":repository_reconciliations
     },indent=2))
