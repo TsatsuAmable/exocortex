@@ -65,6 +65,44 @@ class GraphShapePolicyTests(unittest.TestCase):
             rows=graphshape_policy.select_pending_shape_reviews(c,limit=2)
             self.assertEqual([r['candidate_id'] for r in rows],['c'])
 
+    def test_shape_consensus_requires_two_accepts(self):
+        verdict,rationale=graphshape_policy.aggregate_shape_verdicts([
+            {'model':'reviewer-a','verdict':'ACCEPT'},
+            {'model':'reviewer-b','verdict':'ACCEPT'},
+        ])
+        self.assertEqual(verdict,'ACCEPT')
+        self.assertIn('reviewer-a',rationale)
+
+    def test_shape_disagreement_is_non_authorizing(self):
+        verdict,rationale=graphshape_policy.aggregate_shape_verdicts([
+            {'model':'reviewer-a','verdict':'REJECT'},
+            {'model':'reviewer-b','verdict':'ACCEPT'},
+        ])
+        self.assertNotEqual(verdict,'ACCEPT')
+        self.assertIn('DISAGREEMENT',rationale)
+
+    def test_single_successful_shape_reviewer_is_non_authorizing(self):
+        verdict,rationale=graphshape_policy.aggregate_shape_verdicts([
+            {'model':'reviewer-a','verdict':'ACCEPT'},
+        ])
+        self.assertNotEqual(verdict,'ACCEPT')
+        self.assertIn('INSUFFICIENT',rationale)
+
+    def test_duplicate_model_does_not_count_as_independent_consensus(self):
+        verdict,rationale=graphshape_policy.aggregate_shape_verdicts([
+            {'model':'reviewer-a','verdict':'ACCEPT'},
+            {'model':'reviewer-a','verdict':'ACCEPT'},
+        ])
+        self.assertNotEqual(verdict,'ACCEPT')
+        self.assertIn('INSUFFICIENT',rationale)
+
+    def test_committee_complete_waits_for_two_distinct_reviewers_per_candidate(self):
+        reviews={'c1':[{'model':'a','verdict':'ACCEPT'}], 'c2':[{'model':'a','verdict':'REWRITE'}]}
+        self.assertFalse(graphshape_policy.committee_complete(reviews,['c1','c2']))
+        reviews['c1'].append({'model':'b','verdict':'ACCEPT'})
+        reviews['c2'].append({'model':'b','verdict':'REWRITE'})
+        self.assertTrue(graphshape_policy.committee_complete(reviews,['c1','c2']))
+
 
 class SemanticDaemonTests(unittest.TestCase):
     def test_stage_plan_rotates_fairly_across_active_backlogs(self):

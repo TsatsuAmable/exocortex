@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from distillation_model_client import generate_structured, REMOTE_MODEL_CHAIN, LOCAL_MODEL_CHAIN, prompt_allows_remote
-from distillation_graphshape_policy import select_pending_shape_reviews
+from distillation_graphshape_policy import aggregate_shape_verdicts, committee_complete, select_pending_shape_reviews
 from distillation_review_reconciler import ensure_schema as ensure_review_schema
 
 ROOT=Path.home()/"Library/Application Support/Aineko/GOMS"
@@ -64,9 +64,11 @@ with closing(sqlite3.connect(DB)) as c, c:
           "gate_score":r["score"]
         })
 
-    overall={}
-    review_models = REMOTE_MODEL_CHAIN if prompt_allows_remote(PROMPT+"\n\n"+json.dumps(payload,ensure_ascii=False)) else LOCAL_MODEL_CHAIN[:2]
-    for model in review_models[:2]:
+    overall={}; reviews_by_candidate={}
+    remote_review_models=REMOTE_MODEL_CHAIN+('deepseek-v4-pro:cloud','nemotron-3-ultra:cloud')
+    review_models = remote_review_models if prompt_allows_remote(PROMPT+"\n\n"+json.dumps(payload,ensure_ascii=False)) else LOCAL_MODEL_CHAIN
+    candidate_ids=[r['candidate_id'] for r in rows]
+    for model in review_models:
         try:
             reply=call(PROMPT+"\n\n"+json.dumps(payload,ensure_ascii=False),model)
             out=parse(reply.get("response",""))
@@ -85,21 +87,36 @@ with closing(sqlite3.connect(DB)) as c, c:
             if verdict not in counts:
                 verdict="REJECT"
             counts[verdict]+=1
-            vals=(r["candidate_id"],actual_model,verdict,str(x.get("rationale") or ""),
-                  x.get("subject_title"),x.get("subject_type"),x.get("predicate"),
-                  x.get("object_title"),x.get("object_type"),x.get("literal"),now())
+            review={"model":actual_model,"verdict":verdict,"rationale":str(x.get("rationale") or ""),
+                    "subject_title":x.get("subject_title"),"subject_type":x.get("subject_type"),
+                    "predicate":x.get("predicate"),"object_title":x.get("object_title"),
+                    "object_type":x.get("object_type"),"literal":x.get("literal")}
+            reviews_by_candidate.setdefault(r["candidate_id"],[]).append(review)
+            vals=(r["candidate_id"],actual_model,verdict,review["rationale"],
+                  review["subject_title"],review["subject_type"],review["predicate"],
+                  review["object_title"],review["object_type"],review["literal"],now())
             c.execute("""insert into distillation_graphshape_review_history(
               candidate_id,reviewer_model,verdict,rationale,subject_title,subject_type,
               predicate,object_title,object_type,literal,reviewed_at)
               values(?,?,?,?,?,?,?,?,?,?,?)""", vals)
-            c.execute("""insert or replace into distillation_graphshape_reviews(
-              candidate_id,verdict,rationale,subject_title,subject_type,predicate,
-              object_title,object_type,literal,reviewer_model,reviewed_at,gate_fingerprint)
-              values(?,?,?,?,?,?,?,?,?,?,?,?)""",
-              (r["candidate_id"],verdict,str(x.get("rationale") or ""),
-               x.get("subject_title"),x.get("subject_type"),x.get("predicate"),
-               x.get("object_title"),x.get("object_type"),x.get("literal"),
-               actual_model,now(),r["gate_fingerprint"]))
         overall[actual_model]=counts
         c.commit()
+        if committee_complete(reviews_by_candidate,candidate_ids):
+            break
+    for r in rows:
+        reviews=reviews_by_candidate.get(r["candidate_id"],[])
+        if len(reviews) < 2:
+            continue
+        verdict,rationale=aggregate_shape_verdicts(reviews)
+        representative=next((x for x in reviews if x["verdict"] != "ACCEPT"),reviews[0])
+        committee='committee:'+','.join(str(x["model"]) for x in reviews)
+        c.execute("""insert or replace into distillation_graphshape_reviews(
+          candidate_id,verdict,rationale,subject_title,subject_type,predicate,
+          object_title,object_type,literal,reviewer_model,reviewed_at,gate_fingerprint)
+          values(?,?,?,?,?,?,?,?,?,?,?,?)""",
+          (r["candidate_id"],verdict,rationale,representative.get("subject_title"),
+           representative.get("subject_type"),representative.get("predicate"),
+           representative.get("object_title"),representative.get("object_type"),
+           representative.get("literal"),committee,now(),r["gate_fingerprint"]))
+    c.commit()
     print(json.dumps({"reviewed":len(rows),"by_model":overall},indent=2))

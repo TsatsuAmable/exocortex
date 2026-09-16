@@ -138,7 +138,7 @@ def publish_review_surface(connection, summary, observed_at=None):
       join attention_control_intents aci on aci.intent_id=ci.id
       join attention_items ai on ai.id=aci.attention_id
       where ai.source='AuthorityReviewController' and ai.status='resolved'
-        and ci.status in ('NEEDS_DECISION','DEFERRED','ESCALATED','APPROVED')''').fetchall()
+        and ci.status in ('NEEDS_DECISION','DEFERRED','ESCALATED')''').fetchall()
     for intent_id,from_status in legacy_intents:
         event_id='intent_event_'+hashlib.sha256((intent_id+'|passive-authority-review-retired').encode()).hexdigest()[:24]
         connection.execute('''insert or ignore into control_intent_events

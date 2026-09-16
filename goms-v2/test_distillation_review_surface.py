@@ -91,7 +91,7 @@ class ReviewSurfaceTests(unittest.TestCase):
                 c,observed_at='2026-09-16T00:10:00+00:00',max_age_seconds=300))
 
 
-    def test_publish_retires_approved_legacy_passive_review_intent(self):
+    def test_publish_preserves_human_approved_legacy_review_intent(self):
         ts='2026-09-16T00:00:00+00:00'
         with self.store.connect() as c:
             c.execute("""insert into attention_items(id,category,severity,title,summary,status,suggested_actions,source,created_at,updated_at)
@@ -101,6 +101,7 @@ class ReviewSurfaceTests(unittest.TestCase):
             c.execute("insert into attention_control_intents values('approved-review','intent-approved-review',?)",(ts,))
         with closing(sqlite3.connect(self.db)) as c, c:
             surface.publish_review_surface(c,{'total':0,'oldest':None,'cohorts':[]},observed_at=ts)
-            self.assertEqual(c.execute("select status from control_intents where id='intent-approved-review'").fetchone()[0],'REJECTED')
+            self.assertEqual(c.execute("select status from control_intents where id='intent-approved-review'").fetchone()[0],'APPROVED')
+            self.assertEqual(c.execute("select count(*) from control_intent_events where intent_id='intent-approved-review' and to_status='REJECTED'").fetchone()[0],0)
 
 if __name__=='__main__': unittest.main(verbosity=2)
