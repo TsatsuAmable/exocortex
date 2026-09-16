@@ -12,6 +12,8 @@ ROOT = Path.home()/"Library/Application Support/Aineko/GOMS"
 DB = ROOT/"goms.sqlite3"
 LOCK = ROOT/"distillation_semantic_daemon.lock"
 
+STAGE_ORDER = ('validate','reconcile','gate','shape','promote')
+
 SCRIPTS = {
     'validate': 'distillation_validate_incremental.py',
     'reconcile': 'distillation_reconcile.py',
@@ -32,9 +34,12 @@ def stage_counts(db_path=DB):
         return q
 
 
-def choose_stage(counts):
-    for key, stage in (('unvalidated','validate'),('unreconciled','reconcile'),('gate_missing','gate'),('shape_missing','shape'),('promotable','promote')):
-        if int(counts.get(key, 0)) > 0:
+def choose_stage(counts, cursor=0):
+    keys={'validate':'unvalidated','reconcile':'unreconciled','gate':'gate_missing','shape':'shape_missing','promote':'promotable'}
+    start=int(cursor) % len(STAGE_ORDER)
+    for offset in range(len(STAGE_ORDER)):
+        stage=STAGE_ORDER[(start+offset) % len(STAGE_ORDER)]
+        if int(counts.get(keys[stage],0)) > 0:
             return stage
     return None
 
@@ -48,19 +53,17 @@ def run_stage(stage, root=ROOT):
 def run_forever(active_sleep=1.0, idle_sleep=15.0):
     with LOCK.open('w') as lock:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX|fcntl.LOCK_NB)
+        cursor=0
         while True:
             counts = stage_counts()
-            stage = choose_stage(counts)
+            stage = choose_stage(counts,cursor=cursor)
             result = {'observed_at':datetime.now(timezone.utc).isoformat(),'counts':counts,'stage':stage}
             if stage:
+                cursor=(STAGE_ORDER.index(stage)+1) % len(STAGE_ORDER)
                 outcome = run_stage(stage)
                 result['outcome'] = outcome
-                if outcome['returncode']:
-                    print(json.dumps(result,sort_keys=True),flush=True)
-                    time.sleep(max(5.0,idle_sleep))
-                    continue
                 print(json.dumps(result,sort_keys=True),flush=True)
-                time.sleep(active_sleep)
+                time.sleep(max(5.0,idle_sleep) if outcome['returncode'] else active_sleep)
             else:
                 print(json.dumps(result,sort_keys=True),flush=True)
                 time.sleep(idle_sleep)

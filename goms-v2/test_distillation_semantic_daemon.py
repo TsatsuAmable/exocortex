@@ -34,13 +34,13 @@ class ReconcilePolicyTests(unittest.TestCase):
 
 
 class SemanticDaemonTests(unittest.TestCase):
-    def test_stage_plan_prioritizes_oldest_upstream_gap(self):
-        self.assertEqual(semantic_daemon.choose_stage({'unvalidated':3,'unreconciled':2,'gate_missing':2,'shape_missing':1,'promotable':1}),'validate')
-        self.assertEqual(semantic_daemon.choose_stage({'unvalidated':0,'unreconciled':2,'gate_missing':2,'shape_missing':1,'promotable':1}),'reconcile')
-        self.assertEqual(semantic_daemon.choose_stage({'unvalidated':0,'unreconciled':0,'gate_missing':2,'shape_missing':1,'promotable':1}),'gate')
-        self.assertEqual(semantic_daemon.choose_stage({'unvalidated':0,'unreconciled':0,'gate_missing':0,'shape_missing':1,'promotable':1}),'shape')
-        self.assertEqual(semantic_daemon.choose_stage({'unvalidated':0,'unreconciled':0,'gate_missing':0,'shape_missing':0,'promotable':1}),'promote')
-        self.assertIsNone(semantic_daemon.choose_stage({'unvalidated':0,'unreconciled':0,'gate_missing':0,'shape_missing':0,'promotable':0}))
+    def test_stage_plan_rotates_fairly_across_active_backlogs(self):
+        counts={'unvalidated':3,'unreconciled':2,'gate_missing':2,'shape_missing':1,'promotable':1}
+        self.assertEqual([semantic_daemon.choose_stage(counts,cursor=i) for i in range(5)],
+                         ['validate','reconcile','gate','shape','promote'])
+        self.assertEqual(semantic_daemon.choose_stage({'unvalidated':3,'unreconciled':2,'gate_missing':0,'shape_missing':0,'promotable':0},cursor=2),'validate')
+        self.assertEqual(semantic_daemon.choose_stage({'unvalidated':3,'unreconciled':2,'gate_missing':0,'shape_missing':0,'promotable':0},cursor=1),'reconcile')
+        self.assertIsNone(semantic_daemon.choose_stage({'unvalidated':0,'unreconciled':0,'gate_missing':0,'shape_missing':0,'promotable':0},cursor=4))
 
 
 if __name__=='__main__': unittest.main(verbosity=2)
