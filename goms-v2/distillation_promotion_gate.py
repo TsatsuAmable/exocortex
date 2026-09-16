@@ -7,9 +7,10 @@ from pathlib import Path
 
 from distillation_temporal_authority import authority_profile, record_temporal_authority, temporal_gate_override
 from distillation_review_policy import (
-    assess_existing_values, gate_fingerprint, normalize_entity_title,
+    assess_existing_values, entity_is_rebindable, gate_fingerprint, normalize_entity_title,
     review_reason_for_score, requires_hard_review, unique_entity_match,
 )
+from distillation_review_reconciler import ensure_schema as ensure_review_schema
 
 ROOT=Path.home()/"Library/Application Support/Aineko/GOMS"
 DB=ROOT/"goms.sqlite3"
@@ -27,9 +28,7 @@ with closing(sqlite3.connect(DB)) as c, c:
       reasons TEXT NOT NULL DEFAULT '[]', subject_resolution TEXT,
       object_resolution TEXT, contradiction_count INTEGER NOT NULL DEFAULT 0,
       checked_at TEXT NOT NULL, gate_fingerprint TEXT);""")
-    columns={row[1] for row in c.execute('pragma table_info(distillation_promotion_gate)').fetchall()}
-    if 'gate_fingerprint' not in columns:
-        c.execute('alter table distillation_promotion_gate add column gate_fingerprint text')
+    ensure_review_schema(c)
 
     entities=[dict(r) for r in c.execute(
       "select id,type,title,summary,status from entities where type not in ('evidence','source')").fetchall()]
@@ -38,7 +37,9 @@ with closing(sqlite3.connect(DB)) as c, c:
     for e in entities:
         by_id[e['id']]=e
         if e.get('title'):
-            by_title[norm(e['title'])].append(e)
+            key=norm(e['title'])
+            if key:
+                by_title[key].append(e)
 
     proposals=[dict(r) for r in c.execute("""select p.*,d.evidence_ids,
       d.confidence extractor_confidence,v.confidence validator_confidence,
@@ -77,6 +78,8 @@ with closing(sqlite3.connect(DB)) as c, c:
             row=by_id.get(p.get("subject_id"))
             if not row:
                 reasons.append("BAD_SUBJECT_ID"); score-=0.4
+            elif not entity_is_rebindable(row):
+                reasons.append("SUBJECT_ENTITY_INACTIVE"); score-=0.4
             else:
                 sres=row["id"]
         elif stitle in by_title:
@@ -92,6 +95,8 @@ with closing(sqlite3.connect(DB)) as c, c:
             row=by_id.get(p.get("object_id"))
             if not row:
                 reasons.append("BAD_OBJECT_ID"); score-=0.4
+            elif not entity_is_rebindable(row):
+                reasons.append("OBJECT_ENTITY_INACTIVE"); score-=0.4
             else:
                 ores=row["id"]
         elif p.get("object_mode")=="new":

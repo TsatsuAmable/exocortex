@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 import re
+import unicodedata
 
 from distillation_temporal_authority import TemporalProfile, _FUNCTIONAL_PREDICATES
 
@@ -14,6 +15,7 @@ _HARD_REVIEW_REASONS={
     'SUBJECT_DUPLICATE_AMBIGUOUS','OBJECT_DUPLICATE_AMBIGUOUS',
     'POTENTIAL_CONTRADICTION','STALE_STATE_UPDATE','AUTHORITY_CONFLICT',
     'SENTENCE_SHAPED_SUBJECT','SENTENCE_SHAPED_OBJECT',
+    'SUBJECT_ENTITY_INACTIVE','OBJECT_ENTITY_INACTIVE',
 }
 
 
@@ -30,7 +32,8 @@ def predicate_is_functional(predicate):
 
 
 def normalize_entity_title(value):
-    return re.sub(r'[^a-z0-9]+',' ',str(value or '').lower()).strip()
+    text=unicodedata.normalize('NFKC',str(value or '')).casefold()
+    return ' '.join(''.join(ch if ch.isalnum() else ' ' for ch in text).split())
 
 
 def entity_is_rebindable(entity):
@@ -39,7 +42,10 @@ def entity_is_rebindable(entity):
 
 
 def unique_entity_match(entity_index, title, proposed_type=None):
-    hits=[e for e in entity_index.get(normalize_entity_title(title),()) if entity_is_rebindable(e)]
+    key=normalize_entity_title(title)
+    if not key:
+        return None
+    hits=[e for e in entity_index.get(key,()) if entity_is_rebindable(e)]
     if len(hits) != 1:
         return None
     hit=hits[0]

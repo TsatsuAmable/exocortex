@@ -29,7 +29,7 @@ with closing(sqlite3.connect(DB)) as c, c:
       join distillation_promotion_gate g on g.candidate_id=p.candidate_id
       join distillation_graphshape_reviews s on s.candidate_id=p.candidate_id
       join distillation_temporal_authority t on t.candidate_id=p.candidate_id
-      where p.status='candidate' and g.decision='AUTO_READY' and s.verdict='ACCEPT' and t.auto_eligible=1
+      where p.status='candidate' and g.decision='AUTO_READY' and g.gate_fingerprint is not null and s.verdict='ACCEPT' and t.auto_eligible=1
       order by g.score desc""").fetchall()]
 
     promoted=[]

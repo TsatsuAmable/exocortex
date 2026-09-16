@@ -45,6 +45,7 @@ def ensure_schema(connection):
       on distillation_reconciliation_proposals
       begin
         update distillation_promotion_gate set gate_fingerprint=null where candidate_id=new.candidate_id;
+        delete from distillation_graphshape_reviews where candidate_id=new.candidate_id;
       end;
     ''')
 
@@ -72,7 +73,9 @@ def _entity_index(connection):
         rows=[]
     for row in rows:
         item=dict(row) if hasattr(row,'keys') else {'id':row[0],'type':row[1],'title':row[2],'status':row[3]}
-        groups[normalize_entity_title(item.get('title'))].append(item)
+        key=normalize_entity_title(item.get('title'))
+        if key:
+            groups[key].append(item)
     return groups
 
 

@@ -69,6 +69,10 @@ class ReviewSurfaceTests(unittest.TestCase):
             self.assertEqual(c.execute("select status from attention_items where id='legacy-review'").fetchone()[0],'resolved')
             state,severity=c.execute("select state,severity from alerts where id=?",(alert['id'],)).fetchone()
             self.assertEqual((state,severity),('RESOLVED','ACTION_REQUIRED'))
+            intent_status=c.execute("select status from control_intents where id=?",(intent_id,)).fetchone()[0]
+            self.assertEqual(intent_status,'REJECTED')
+            event=c.execute("select event_type,from_status,to_status from control_intent_events where intent_id=? and to_status='REJECTED'",(intent_id,)).fetchone()
+            self.assertEqual(tuple(event),('transition','NEEDS_DECISION','REJECTED'))
 
     def test_surface_dirty_when_missing_stale_or_review_count_changes(self):
         summary={'total':0,'oldest':None,'cohorts':[]}

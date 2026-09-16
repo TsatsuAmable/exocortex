@@ -86,6 +86,27 @@ class ReviewReconcilerTests(unittest.TestCase):
             result=rr.reconcile_review_batch(c,limit=10,observed_at='t2')
             self.assertEqual(result['actions'],{'HOLD':1})
 
+    def test_proposal_change_invalidates_shape_approval_and_requires_regate(self):
+        with closing(make_db()) as c:
+            c.execute("alter table distillation_promotion_gate add column gate_fingerprint text")
+            c.execute("insert into distillation_reconciliation_proposals values('dirty','preference','existing','u',null,'User','status','literal',null,null,null,'old',.95,'r','candidate','t')")
+            c.execute("insert into distillation_promotion_gate values('dirty','AUTO_READY',.95,'[]',null,null,0,'t','fp')")
+            c.execute("insert into distillation_graphshape_reviews values('dirty','ACCEPT')")
+            rr.ensure_schema(c)
+            c.execute("update distillation_reconciliation_proposals set literal='new' where candidate_id='dirty'")
+            self.assertIsNone(c.execute("select gate_fingerprint from distillation_promotion_gate where candidate_id='dirty'").fetchone()[0])
+            self.assertIsNone(c.execute("select 1 from distillation_graphshape_reviews where candidate_id='dirty'").fetchone())
+
+    def test_unicode_empty_normalization_cannot_rebind_unrelated_entity(self):
+        with closing(make_db()) as c:
+            proposal(c,subject_title='Проект',subject_type='project',object_title='Other',object_type='idea')
+            c.execute("insert into entities values('project_other','project','用户','active')")
+            gate(c,subject_resolution='project_other',object_resolution=None,reasons=['SUBJECT_DUPLICATE_EXISTING'])
+            result=rr.reconcile_review_batch(c,limit=10,observed_at='t2')
+            self.assertEqual(result['actions'],{'HOLD':1})
+            row=c.execute("select subject_mode,subject_id from distillation_reconciliation_proposals where candidate_id='c1'").fetchone()
+            self.assertEqual(tuple(row),('new',None))
+
     def test_changed_authority_payload_reopens_adjudication_even_if_gate_score_and_reason_same(self):
         with closing(make_db()) as c:
             c.execute("insert into distillation_reconciliation_proposals values('cx','preference','existing','u',null,'User','prefers','literal',null,null,null,'short',.85,'r1','candidate','2026-09-01T00:00:00Z')")
@@ -121,6 +142,25 @@ class ReviewReconcilerTests(unittest.TestCase):
             self.assertEqual(c.execute("select status from distillation_reconciliation_proposals where candidate_id='c3'").fetchone()[0],'candidate')
             self.assertIn('gate_fingerprint',[r[1] for r in c.execute('pragma table_info(distillation_promotion_gate)')])
             self.assertTrue(c.execute("select gate_fingerprint from distillation_promotion_gate where candidate_id='c3'").fetchone()[0])
+
+
+    def test_legacy_gate_schema_can_load_current_schema_before_explicit_migration(self):
+        from pathlib import Path
+        with closing(sqlite3.connect(':memory:')) as c:
+            schema=Path('schema.sql').read_text()
+            c.executescript(schema)
+            c.execute('drop table distillation_promotion_gate')
+            c.execute('''create table distillation_promotion_gate(
+              candidate_id text primary key,decision text,score real,reasons text,
+              subject_resolution text,object_resolution text,contradiction_count integer,checked_at text)''')
+            # Replaying current schema over a legacy live table must not reference
+            # the new column before the explicit reconciler migration adds it.
+            c.executescript(schema)
+            self.assertNotIn('gate_fingerprint',[r[1] for r in c.execute('pragma table_info(distillation_promotion_gate)')])
+            rr.ensure_schema(c)
+            self.assertIn('gate_fingerprint',[r[1] for r in c.execute('pragma table_info(distillation_promotion_gate)')])
+            trigger=c.execute("select name from sqlite_master where type='trigger' and name='distillation_review_proposal_fingerprint_dirty'").fetchone()
+            self.assertIsNotNone(trigger)
 
     def test_unadjudicated_detection_uses_current_persisted_fingerprint(self):
         with closing(make_db()) as c:

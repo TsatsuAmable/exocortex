@@ -134,6 +134,19 @@ def publish_review_surface(connection, summary, observed_at=None):
         select aci.intent_id from attention_control_intents aci
         join attention_items ai on ai.id=aci.attention_id
         where ai.source='AuthorityReviewController' and ai.status='resolved')''',(ts,ts))
+    legacy_intents=connection.execute('''select ci.id,ci.status from control_intents ci
+      join attention_control_intents aci on aci.intent_id=ci.id
+      join attention_items ai on ai.id=aci.attention_id
+      where ai.source='AuthorityReviewController' and ai.status='resolved'
+        and ci.status in ('NEEDS_DECISION','DEFERRED','ESCALATED')''').fetchall()
+    for intent_id,from_status in legacy_intents:
+        event_id='intent_event_'+hashlib.sha256((intent_id+'|passive-authority-review-retired').encode()).hexdigest()[:24]
+        connection.execute('''insert or ignore into control_intent_events
+          (id,intent_id,event_type,from_status,to_status,actor,detail,created_at)
+          values(?,?,'transition',?,'REJECTED','system:authority-review-surface',?,?)''',
+          (event_id,intent_id,from_status,json.dumps({'reason':'passive_review_not_attention'},sort_keys=True),ts))
+        connection.execute("update control_intents set status='REJECTED',decision_required=0,updated_at=? where id=? and status=?",
+                           (ts,intent_id,from_status))
     connection.commit(); return RESOURCE_ID
 
 
