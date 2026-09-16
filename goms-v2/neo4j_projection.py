@@ -2,10 +2,12 @@
 import json
 import array
 import subprocess
+from datetime import datetime, timezone
 from contextlib import contextmanager
 
 from neo4j import GraphDatabase
 from goms_store import GomsStore
+from distillation_temporal_authority import assertion_is_active
 
 URI = "bolt://127.0.0.1:7687"
 USER = "neo4j"
@@ -65,8 +67,10 @@ def rebuild(store=None, batch_size=1000):
     for c in checkpoints:
         c["unresolved"] = json.loads(c.get("unresolved") or "[]")
         c["provenance"] = json.dumps(json.loads(c.get("provenance") or "{}"), sort_keys=True)
+    cutoff=datetime.now(timezone.utc).isoformat()
     for a in assertions:
         a["metadata"] = json.dumps(json.loads(a.get("metadata") or "{}"), sort_keys=True)
+        a["active"] = assertion_is_active(a.get("valid_to"),cutoff)
 
     embeddings = {}
     for r in embedding_rows:
@@ -173,7 +177,8 @@ def rebuild(store=None, batch_size=1000):
                         r.epistemic_status=a.epistemic_status,
                         r.valid_from=a.valid_from, r.valid_to=a.valid_to,
                         r.source_entity_id=a.source_entity_id, r.source_ref=a.source_ref,
-                        r.supersedes=a.supersedes, r.metadata=a.metadata, r.updated_at=a.updated_at
+                        r.supersedes=a.supersedes, r.metadata=a.metadata, r.updated_at=a.updated_at,
+                        r.active=a.active
                 """, rows=rows).consume()
             s.run("""
                 CREATE VECTOR INDEX goms_embedding IF NOT EXISTS
@@ -191,8 +196,11 @@ def rebuild(store=None, batch_size=1000):
                     MERGE (n:GOMS:AssertionLiteral {id:a.id})
                     SET n.predicate=a.predicate, n.value=a.literal_value,
                         n.confidence=a.confidence, n.epistemic_status=a.epistemic_status,
-                        n.source_ref=a.source_ref, n.updated_at=a.updated_at
-                    MERGE (x)-[:HAS_ASSERTION]->(n)
+                        n.valid_from=a.valid_from, n.valid_to=a.valid_to,
+                        n.source_ref=a.source_ref, n.supersedes=a.supersedes,
+                        n.metadata=a.metadata, n.updated_at=a.updated_at, n.active=a.active
+                    MERGE (x)-[r:HAS_ASSERTION]->(n)
+                    SET r.active=a.active
                 """, rows=rows).consume()
 
     return {"entities": len(entities), "relations": len(relations),
@@ -206,6 +214,7 @@ def neighbors(node_id, limit=50):
         with d.session() as s:
             rows = s.run("""
                 MATCH (n:GOMS {id:$id})-[r]-(m:GOMS)
+                WHERE type(r) NOT IN ['SEMANTIC_ASSERTION','HAS_ASSERTION'] OR coalesce(r.active,true)=true
                 RETURN type(r) AS edge_type, r.kind AS relation,
                        m.id AS id, labels(m) AS labels,
                        m.type AS type, m.title AS title,

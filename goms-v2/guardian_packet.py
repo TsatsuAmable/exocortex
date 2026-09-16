@@ -14,8 +14,9 @@ def rows(c,q,args=()): return [dict(r) for r in c.execute(q,args).fetchall()]
 
 with closing(sqlite3.connect(DB)) as c, c:
     c.row_factory=sqlite3.Row
+    generated_at=now()
     packet={
-      "generated_at":now(),
+      "generated_at":generated_at,
       "purpose":"Adversarial constitutional audit of GOMS against agalmic objectives. Propose only; do not mutate canonical state.",
       "system_resilience":{
         "open_priority_items":rows(c,"""select category,severity,title,summary,source,updated_at
@@ -44,6 +45,9 @@ with closing(sqlite3.connect(DB)) as c, c:
       "semantic":{
         "entity_counts":rows(c,"select type,count(*) count from entities group by type order by count desc"),
         "assertion_count":c.execute("select count(*) from semantic_assertions").fetchone()[0],
+        "active_assertion_count":c.execute("select count(*) from semantic_assertions where valid_to is null or valid_to > ?",(generated_at,)).fetchone()[0],
+        "historical_assertion_count":c.execute("select count(*) from semantic_assertions where valid_to is not null and valid_to <= ?",(generated_at,)).fetchone()[0],
+        "quarantined_assertion_count":c.execute("select count(*) from semantic_assertions where epistemic_status in ('quarantined_nonfactual','authority_review')").fetchone()[0],
         "ontology_candidate_count":c.execute("select count(*) from ontology_proposals where status='candidate'").fetchone()[0],
         "top_ontology_candidates":rows(c,"""select proposal_type,canonical_name,evidence_count,confidence,rationale
                                            from ontology_proposals where status='candidate'
@@ -58,6 +62,7 @@ with closing(sqlite3.connect(DB)) as c, c:
                                          where type='source'
                                          and source like 'chatgpt://conversation/%'""").fetchone()[0],
         "semantic_assertion_count":c.execute("select count(*) from semantic_assertions").fetchone()[0],
+        "active_semantic_assertion_count":c.execute("select count(*) from semantic_assertions where valid_to is null or valid_to > ?",(generated_at,)).fetchone()[0],
         "note":"Golden-set distillation metrics not yet implemented; treat as a programme gap."
       },
       "architecture":{
@@ -75,7 +80,8 @@ with closing(sqlite3.connect(DB)) as c, c:
         "recent_branches":rows(c,"""select id,title,project,status,last_result,next_action,blocker,updated_at
                                    from branches order by updated_at desc limit 30"""),
         "recent_assertions":rows(c,"""select a.id,s.title subject,a.predicate,o.title object,
-                                     a.literal_value,a.confidence,a.epistemic_status,a.source_ref,a.updated_at
+                                     a.literal_value,a.confidence,a.epistemic_status,a.valid_from,a.valid_to,
+                                     a.supersedes,a.source_ref,a.updated_at
                                      from semantic_assertions a
                                      left join entities s on s.id=a.subject_id
                                      left join entities o on o.id=a.object_id

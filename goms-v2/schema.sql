@@ -475,6 +475,15 @@ CREATE TABLE IF NOT EXISTS distillation_metrics(
   promotion_backlog INTEGER NOT NULL DEFAULT 0,
   metadata TEXT NOT NULL DEFAULT '{}'
 );
+CREATE TABLE IF NOT EXISTS distillation_temporal_authority (
+  candidate_id TEXT PRIMARY KEY,
+  temporal_mode TEXT NOT NULL,
+  observed_at TEXT,
+  auto_eligible INTEGER NOT NULL,
+  reasons TEXT NOT NULL DEFAULT '[]',
+  checked_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS distillation_promotion_gate(
       candidate_id TEXT PRIMARY KEY, decision TEXT NOT NULL, score REAL NOT NULL,
       reasons TEXT NOT NULL DEFAULT '[]', subject_resolution TEXT,

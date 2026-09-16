@@ -4,6 +4,8 @@ import hashlib, json, sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+from distillation_temporal_authority import TemporalProfile, assertion_fields, reconcile_lineages
+
 ROOT=Path.home()/"Library/Application Support/Aineko/GOMS"
 DB=ROOT/"goms.sqlite3"
 
@@ -19,19 +21,25 @@ with closing(sqlite3.connect(DB)) as c, c:
     rows=[dict(r) for r in c.execute("""select p.*,d.evidence_ids,
       d.confidence extractor_confidence,v.confidence validator_confidence,
       v.validator_model,g.score promotion_score,s.verdict shape_verdict,
-      s.reviewer_model,s.rationale shape_rationale
+      s.reviewer_model,s.rationale shape_rationale,
+      t.temporal_mode,t.observed_at,t.auto_eligible,t.reasons temporal_reasons
       from distillation_reconciliation_proposals p
       join distillation_candidates d on d.id=p.candidate_id
       join distillation_validations v on v.candidate_id=p.candidate_id
       join distillation_promotion_gate g on g.candidate_id=p.candidate_id
       join distillation_graphshape_reviews s on s.candidate_id=p.candidate_id
-      where p.status='candidate' and g.decision='AUTO_READY' and s.verdict='ACCEPT'
+      join distillation_temporal_authority t on t.candidate_id=p.candidate_id
+      where p.status='candidate' and g.decision='AUTO_READY' and s.verdict='ACCEPT' and t.auto_eligible=1
       order by g.score desc""").fetchall()]
 
     promoted=[]
     for p in rows:
         try: evidence=json.loads(p.get("evidence_ids") or "[]")
         except: evidence=[]
+        try: temporal_reasons=tuple(json.loads(p.get("temporal_reasons") or "[]"))
+        except Exception: temporal_reasons=()
+        temporal=TemporalProfile(p["temporal_mode"],p["observed_at"],bool(p["auto_eligible"]),temporal_reasons)
+        lifecycle=assertion_fields(temporal)
         provenance={
           "distillation_candidate_id":p["candidate_id"],
           "evidence_ids":evidence,
@@ -40,7 +48,10 @@ with closing(sqlite3.connect(DB)) as c, c:
           "validator_model":p["validator_model"],
           "promotion_score":p["promotion_score"],
           "shape_reviewer_model":p["reviewer_model"],
-          "shape_rationale":p["shape_rationale"]
+          "shape_rationale":p["shape_rationale"],
+          "temporal_mode":temporal.mode,
+          "observed_at":temporal.observed_at,
+          "temporal_authority_reasons":list(temporal.reasons)
         }
         ts=now()
 
@@ -73,13 +84,17 @@ with closing(sqlite3.connect(DB)) as c, c:
                        float(p["confidence"] or 0),
                        float(p["promotion_score"] or 0))
         assertion_id=aid(subject_id,p["predicate"],object_id,literal,source_ref)
+        source_entity_id=evidence[0] if evidence else None
         c.execute("""insert or ignore into semantic_assertions(
           id,subject_id,predicate,object_id,literal_value,confidence,
-          epistemic_status,source_ref,metadata,created_at,updated_at)
-          values(?,?,?,?,?,?,?,?,?,?,?)""",
+          epistemic_status,valid_from,valid_to,source_entity_id,source_ref,supersedes,
+          metadata,created_at,updated_at)
+          values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
           (assertion_id,subject_id,p["predicate"],object_id,literal,
-           confidence,"validated_extracted",source_ref,
-           json.dumps(provenance,sort_keys=True),ts,ts))
+           confidence,lifecycle["epistemic_status"],lifecycle["valid_from"],lifecycle["valid_to"],
+           source_entity_id,source_ref,None,json.dumps(provenance,sort_keys=True),ts,ts))
+        if temporal.mode in ("CURRENT_STATE","COMMITMENT"):
+            reconcile_lineages(c,subject_id,p["predicate"])
         c.execute("""update distillation_reconciliation_proposals
                      set status='promoted' where candidate_id=?""",(p["candidate_id"],))
         promoted.append({

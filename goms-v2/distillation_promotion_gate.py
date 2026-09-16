@@ -4,6 +4,8 @@ import json, re, sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+from distillation_temporal_authority import authority_profile, record_temporal_authority, temporal_gate_override
+
 ROOT=Path.home()/"Library/Application Support/Aineko/GOMS"
 DB=ROOT/"goms.sqlite3"
 
@@ -42,6 +44,9 @@ with closing(sqlite3.connect(DB)) as c, c:
         score=(ec+vc+cc)/3.0
         try: evidence=json.loads(p.get("evidence_ids") or "[]")
         except: evidence=[]
+        temporal=authority_profile(c,p.get('canonical_kind'),p.get('durability'),evidence)
+        record_temporal_authority(c,p['candidate_id'],temporal,now())
+        reasons.extend(temporal.reasons)
         if not evidence:
             reasons.append("NO_PROVENANCE"); score-=0.5
         elif len(evidence)>=2:
@@ -107,8 +112,11 @@ with closing(sqlite3.connect(DB)) as c, c:
         hard_reject={"NO_PROVENANCE","VALIDATOR_REJECTED","BAD_SUBJECT_ID","BAD_OBJECT_ID"}
         hard_review={"SUBJECT_IDENTITY_UNRESOLVED","OBJECT_IDENTITY_UNRESOLVED",
                      "POTENTIAL_CONTRADICTION","SENTENCE_SHAPED_SUBJECT","SENTENCE_SHAPED_OBJECT"}
+        temporal_override=temporal_gate_override(temporal)
         if any(x in hard_reject for x in reasons) or score<0.55:
             decision="REJECT"
+        elif temporal_override:
+            decision=temporal_override
         elif any(x in hard_review for x in reasons) or score<0.88:
             decision="REVIEW"
         else:
@@ -123,6 +131,6 @@ with closing(sqlite3.connect(DB)) as c, c:
         details.append({"candidate_id":p["candidate_id"],"decision":decision,
           "score":round(score,3),"subject":p.get("subject_title"),
           "predicate":p.get("predicate"),"object":p.get("object_title") or p.get("literal"),
-          "reasons":reasons})
+          "reasons":reasons,"temporal_mode":temporal.mode,"observed_at":temporal.observed_at})
     c.commit()
     print(json.dumps({"counts":counts,"items":details},indent=2))

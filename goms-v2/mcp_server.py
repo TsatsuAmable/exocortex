@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from typing import Any
 from pathlib import Path
+from datetime import datetime, timezone
 import json
 import urllib.request
 
@@ -153,24 +154,27 @@ def graph_neighbors(node_id: str, limit: int = 50) -> dict[str, Any]:
     return ok(node_id=node_id, neighbors=graph_neighbors_query(node_id, limit))
 
 
-@server.tool(structured_output=True, description="Return the compact semantic world model around a person: objectives, projects, agents, constraints and other asserted relations.")
-def semantic_world(person_title: str = "User", limit: int = 100) -> dict[str, Any]:
+@server.tool(structured_output=True, description="Return the compact current semantic world model around a person. History is opt-in.")
+def semantic_world(person_title: str = "User", limit: int = 100, include_history: bool = False) -> dict[str, Any]:
     limit=max(1,min(limit,500))
+    cutoff=datetime.now(timezone.utc).isoformat()
     with store.connect() as con:
         person=con.execute("SELECT id,title,summary FROM entities WHERE type='person' AND title=? LIMIT 1",(person_title,)).fetchone()
         if not person:
             return ok(person=None, assertions=[])
-        rows=con.execute("""
+        history_clause="" if include_history else " AND (a.valid_to IS NULL OR a.valid_to > ?)"
+        args=(person["id"],limit) if include_history else (person["id"],cutoff,limit)
+        rows=con.execute(f"""
           SELECT a.id,a.predicate,a.confidence,a.epistemic_status,a.literal_value,
-                 a.valid_from,a.valid_to,a.source_ref,
+                 a.valid_from,a.valid_to,a.supersedes,a.source_ref,
                  o.id object_id,o.type object_type,o.title object_title,o.summary object_summary
           FROM semantic_assertions a
           LEFT JOIN entities o ON o.id=a.object_id
-          WHERE a.subject_id=?
+          WHERE a.subject_id=?{history_clause}
           ORDER BY a.confidence DESC,a.predicate,o.title
           LIMIT ?
-        """,(person["id"],limit)).fetchall()
-        return ok(person=dict(person), assertions=[dict(r) for r in rows])
+        """,args).fetchall()
+        return ok(person=dict(person), assertions=[dict(r) for r in rows], include_history=include_history)
 
 @server.tool(structured_output=True, description="List ontology evolution proposals without promoting them to facts.")
 def ontology_proposals(status: str = "candidate", limit: int = 50) -> dict[str, Any]:
@@ -190,17 +194,20 @@ def ontology_proposals(status: str = "candidate", limit: int = 50) -> dict[str, 
         out.append(x)
     return ok(proposals=out)
 
-@server.tool(structured_output=True, description="Return semantic assertions for one canonical entity, preserving confidence and provenance.")
-def semantic_assertions(entity_id: str, limit: int = 100) -> dict[str, Any]:
+@server.tool(structured_output=True, description="Return active semantic assertions for one canonical entity; set include_history for expired observations and superseded state.")
+def semantic_assertions(entity_id: str, limit: int = 100, include_history: bool = False) -> dict[str, Any]:
     limit=max(1,min(limit,500))
+    cutoff=datetime.now(timezone.utc).isoformat()
     with store.connect() as con:
-        rows=con.execute("""
+        history_clause="" if include_history else " AND (a.valid_to IS NULL OR a.valid_to > ?)"
+        args=(entity_id,entity_id,limit) if include_history else (entity_id,entity_id,cutoff,limit)
+        rows=con.execute(f"""
           SELECT a.*,o.type object_type,o.title object_title
           FROM semantic_assertions a LEFT JOIN entities o ON o.id=a.object_id
-          WHERE a.subject_id=? OR a.object_id=?
+          WHERE (a.subject_id=? OR a.object_id=?){history_clause}
           ORDER BY a.confidence DESC,a.updated_at DESC LIMIT ?
-        """,(entity_id,entity_id,limit)).fetchall()
-    return ok(entity_id=entity_id, assertions=[dict(r) for r in rows])
+        """,args).fetchall()
+    return ok(entity_id=entity_id, assertions=[dict(r) for r in rows], include_history=include_history)
 
 
 @server.tool(structured_output=True, description="Semantic vector search across embedded GOMS concepts, projects, branches and ontology items.")
