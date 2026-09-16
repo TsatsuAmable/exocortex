@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 from contextlib import closing
-import json, sqlite3, urllib.request
+import json, sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+from distillation_model_client import generate_structured, REMOTE_MODEL_CHAIN, LOCAL_MODEL_CHAIN, prompt_allows_remote
+
 ROOT=Path.home()/"Library/Application Support/Aineko/GOMS"
 DB=ROOT/"goms.sqlite3"
-BROKER="http://127.0.0.1:8765/v1/generate"
-SECRET=(Path.home()/"agalmic-llm-broker/secret.txt").read_text().strip()
-
 def now(): return datetime.now(timezone.utc).isoformat()
 
 def parse(text):
@@ -19,11 +18,8 @@ def parse(text):
     return json.loads(text[a:b+1])
 
 def call(prompt,model):
-    body=json.dumps({"model":model,"prompt":prompt,"timeout_seconds":120}).encode()
-    req=urllib.request.Request(BROKER,data=body,headers={
-      "Content-Type":"application/json","Authorization":"Bearer "+SECRET})
-    with urllib.request.urlopen(req,timeout=150) as r:
-        return json.load(r)
+    result=generate_structured(prompt,models=(model,))
+    return {"model":result["model"],"response":result["response"]}
 PROMPT='''You are the final graph-shape reviewer for GOMS.
 Review candidate canonical assertions that already passed extraction, independent validation,
 durability filtering, provenance checks, alias checks, and contradiction checks.
@@ -70,7 +66,8 @@ with closing(sqlite3.connect(DB)) as c, c:
         })
 
     overall={}
-    for model in ("critic","balanced"):
+    review_models = REMOTE_MODEL_CHAIN if prompt_allows_remote(PROMPT+"\n\n"+json.dumps(payload,ensure_ascii=False)) else LOCAL_MODEL_CHAIN[:2]
+    for model in review_models[:2]:
         try:
             reply=call(PROMPT+"\n\n"+json.dumps(payload,ensure_ascii=False),model)
             out=parse(reply.get("response",""))

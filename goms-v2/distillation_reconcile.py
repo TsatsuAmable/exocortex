@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 from contextlib import closing
-import json, sqlite3, urllib.request
+import json, sqlite3
 from datetime import datetime,timezone
 from pathlib import Path
 
 from distillation_reconcile_policy import select_eligible_candidates
+from distillation_model_client import generate_structured
 
 ROOT=Path.home()/"Library/Application Support/Aineko/GOMS"
 DB=ROOT/"goms.sqlite3"
-BROKER="http://127.0.0.1:8765/v1/generate"
-SECRET=(Path.home()/"agalmic-llm-broker/secret.txt").read_text().strip()
-
 def now(): return datetime.now(timezone.utc).isoformat()
 def norm(x):
     return " ".join(str(x or "").lower().replace("_"," ").split())
@@ -21,11 +19,8 @@ def parse(text):
     return json.loads(text[a:b+1])
 
 def call(prompt):
-    body=json.dumps({"model":"critic","prompt":prompt,"timeout_seconds":120}).encode()
-    req=urllib.request.Request(BROKER,data=body,headers={
-      "Content-Type":"application/json","Authorization":"Bearer "+SECRET})
-    with urllib.request.urlopen(req,timeout=150) as r:
-      return json.load(r)
+    result=generate_structured(prompt)
+    return {"model":result["model"],"response":result["response"]}
 
 SCHEMA='''Canonicalize validated semantic candidates into PROPOSALS for the GOMS graph.
 Never mutate state and never invent unsupported facts.
