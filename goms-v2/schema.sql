@@ -489,6 +489,13 @@ CREATE TABLE IF NOT EXISTS distillation_promotion_gate(
       reasons TEXT NOT NULL DEFAULT '[]', subject_resolution TEXT,
       object_resolution TEXT, contradiction_count INTEGER NOT NULL DEFAULT 0,
       checked_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS distillation_review_adjudications(
+      candidate_id TEXT NOT NULL,gate_fingerprint TEXT NOT NULL,gate_checked_at TEXT NOT NULL,
+      action TEXT NOT NULL,reason TEXT NOT NULL,before_state TEXT NOT NULL DEFAULT '{}',
+      after_state TEXT NOT NULL DEFAULT '{}',adjudicated_at TEXT NOT NULL,
+      PRIMARY KEY(candidate_id,gate_fingerprint));
+CREATE INDEX IF NOT EXISTS idx_dist_review_adjudications_action
+ON distillation_review_adjudications(action,adjudicated_at);
 CREATE TABLE IF NOT EXISTS distillation_ready(
       candidate_id TEXT PRIMARY KEY,status TEXT NOT NULL,confidence REAL NOT NULL,
       reason TEXT NOT NULL,ready_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
