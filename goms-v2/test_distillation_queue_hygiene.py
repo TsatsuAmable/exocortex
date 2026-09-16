@@ -32,6 +32,29 @@ class QueueHygieneTests(unittest.TestCase):
         self.assertEqual(states['orphan'],'orphaned')
         self.assertEqual(events,[('assistant','ineligible','not_chatgpt_user_message'),('orphan','orphaned','missing_distillation_artifact')])
 
+    def test_repair_rows_are_cleaned_when_source_is_ineligible_or_selftest(self):
+        with closing(sqlite3.connect(':memory:')) as c:
+            c.executescript('''
+              create table entities(id text primary key,tags text not null,metadata text not null default '{}');
+              create table distillation_artifacts(id text primary key,source_entity_id text not null);
+              create table distillation_segments(id text primary key,artifact_id text not null,status text,last_error text,updated_at text);
+            ''')
+            c.execute("insert into entities values('tool',?,?)",(json.dumps(['chatgpt','message','tool']),'{}'))
+            c.execute("insert into entities values('selftest',?,?)",(json.dumps(['chatgpt','message','user']),json.dumps({'chatgpt_conversation_id':'aineko-v09-production-selftest'})))
+            c.execute("insert into distillation_artifacts values('at','tool')")
+            c.execute("insert into distillation_artifacts values('as','selftest')")
+            c.execute("insert into distillation_segments values('tool-repair','at','repair','old','t')")
+            c.execute("insert into distillation_segments values('selftest-repair','as','repair','old','t')")
+            c.commit()
+            result=hygiene.apply_hygiene(c)
+            states=dict(c.execute('select id,status from distillation_segments'))
+            reasons=dict(c.execute('select segment_id,reason from distillation_queue_hygiene_events'))
+        self.assertEqual(result,{'ineligible':2,'orphaned':0})
+        self.assertEqual(states['tool-repair'],'ineligible')
+        self.assertEqual(states['selftest-repair'],'ineligible')
+        self.assertEqual(reasons['tool-repair'],'not_chatgpt_user_message')
+        self.assertEqual(reasons['selftest-repair'],'known_selftest_conversation')
+
     def test_hygiene_is_idempotent(self):
         with closing(sqlite3.connect(':memory:')) as c:
             c.executescript('''create table entities(id text primary key,tags text not null);create table distillation_artifacts(id text primary key,source_entity_id text not null);create table distillation_segments(id text primary key,artifact_id text not null,status text,last_error text,updated_at text);''')
