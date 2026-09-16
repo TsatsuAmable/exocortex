@@ -3,6 +3,7 @@ import argparse
 import http.client
 import json
 import os
+import re
 import socket
 import subprocess
 import time
@@ -77,6 +78,24 @@ class BurnInBudget:
 
 def privacy_scope_for(provider):
     return 'non_sensitive' if provider.remote else 'private'
+
+_SECRET_PATTERNS = (
+    re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----', re.I),
+    re.compile(r'\bAuthorization\s*:\s*Bearer\s+[A-Za-z0-9._~+/-]{16,}', re.I),
+    re.compile(r'\b(?:api[_-]?key|access[_-]?token|secret|password)\s*[:=]\s*[\"\']?[A-Za-z0-9._~+/-]{16,}', re.I),
+)
+
+
+def segment_allows_remote(segment):
+    if str(segment.get('privacy') or '').strip().lower() == 'local_only':
+        return False
+    text = str(segment.get('content') or '')
+    return not any(pattern.search(text) for pattern in _SECRET_PATTERNS)
+
+
+def providers_for_segment(lane, segment):
+    allow_remote = segment_allows_remote(segment)
+    return tuple(p for p in lane.providers if allow_remote or not p.remote)
 
 
 def build_prompt(segment):
@@ -184,20 +203,14 @@ class QueueHTTPClient:
 
 
 def default_lane_specs():
-    broker_a = (
-        ProviderSpec('nemotron-opencode','opencode','opencode/nemotron-3.5-lightning-free',True),
+    chain = (
+        ProviderSpec('glm-cloud-primary','ollama','glm-5.3:cloud',True),
+        ProviderSpec('deepseek-cloud-fallback','ollama','deepseek-v4-flash:cloud',True),
         ProviderSpec('gsvaineko-local','ollama','gsvaineko-core:v1',False),
-    )
-    broker_b = (
-        ProviderSpec('glm-ollama-cloud','ollama','glm-5.3-flash:cloud',True),
         ProviderSpec('bonsai-local','ollama','bonsai27b:q1',False),
+        ProviderSpec('qwen-last-resort','ollama','qwen3.5:4b',False),
     )
-    qwen = (ProviderSpec('qwen-local','ollama','qwen3.5:4b',False),)
-    return (
-        LaneSpec('broker-a','broker',broker_a),
-        LaneSpec('broker-b','broker',broker_b),
-        LaneSpec('qwen-local','qwen',qwen),
-    )
+    return tuple(LaneSpec(f'cloud-{name}','cloud-first',chain) for name in ('a','b','c'))
 
 
 def _new_stats(lane):
@@ -207,22 +220,17 @@ def _new_stats(lane):
 
 def _run_lane(lane, budget, queue, adapters, stats):
     worker = f'{socket.gethostname()}-{lane.name}'
-    broker = ProviderBroker(lane.providers)
     empty_streak = 0
     while True:
         if not budget.take():
             return
-        provider = broker.next_any()
-        if provider is None:
-            budget.refund(); return
-        scope = privacy_scope_for(provider)
         try:
-            rows = queue.claim(worker, 1, scope)
+            rows = queue.claim(worker, 1, 'private')
         except Exception:
             budget.refund()
             stats['queue_errors'] += 1
             empty_streak += 1
-            if empty_streak >= max(3, len(lane.providers) * 2):
+            if empty_streak >= 3:
                 return
             time.sleep(min(0.5, 0.05 * empty_streak))
             continue
@@ -230,31 +238,57 @@ def _run_lane(lane, budget, queue, adapters, stats):
             budget.refund()
             stats['claim_empty'] += 1
             empty_streak += 1
-            if empty_streak >= max(2, len(lane.providers) * 2):
+            if empty_streak >= 2:
                 return
             continue
         empty_streak = 0
         segment = rows[0]
         stats['attempted'] += 1
-        pstats = stats['providers'].setdefault(provider.name, {'attempted':0,'done':0,'repair':0,'errors':0,'elapsed_s':0.0})
-        pstats['attempted'] += 1
-        started = time.perf_counter()
+        prompt = build_prompt(segment)
+        providers = providers_for_segment(lane, segment)
+        raw = None
+        chosen = None
+        meta = {}
+        for provider in providers:
+            pstats = stats['providers'].setdefault(provider.name, {'attempted':0,'done':0,'repair':0,'errors':0,'elapsed_s':0.0})
+            pstats['attempted'] += 1
+            started = time.perf_counter()
+            try:
+                raw, meta = invoke_provider(provider, prompt, adapters=adapters)
+                elapsed = float(meta.get('elapsed_s') or (time.perf_counter() - started))
+                stats['elapsed_s'] += elapsed
+                pstats['elapsed_s'] += elapsed
+                chosen = provider
+                break
+            except Exception:
+                elapsed = time.perf_counter() - started
+                stats['elapsed_s'] += elapsed
+                pstats['elapsed_s'] += elapsed
+                stats['provider_errors'] += 1
+                pstats['errors'] += 1
+        if chosen is None:
+            try:
+                queue.release(worker, segment['id'], 'all permitted providers failed')
+            except Exception:
+                stats['queue_errors'] += 1
+            continue
         try:
-            raw, meta = invoke_provider(provider, build_prompt(segment), adapters=adapters)
-            result = queue.submit(worker, segment['id'], f'{provider.adapter}:{provider.model}', raw)
-            elapsed = float(meta.get('elapsed_s') or (time.perf_counter() - started))
-            stats['elapsed_s'] += elapsed; pstats['elapsed_s'] += elapsed
-            status = result.get('segment_status')
-            if status == 'done':
-                stats['done'] += 1; pstats['done'] += 1
-            else:
-                stats['repair'] += 1; pstats['repair'] += 1
+            result = queue.submit(worker, segment['id'], f'{chosen.adapter}:{chosen.model}', raw)
         except Exception as exc:
-            stats['provider_errors'] += 1; pstats['errors'] += 1
+            stats['queue_errors'] += 1
             try:
                 queue.release(worker, segment['id'], str(exc)[:1000])
             except Exception:
-                pass
+                stats['queue_errors'] += 1
+            continue
+        pstats = stats['providers'][chosen.name]
+        status = result.get('segment_status')
+        if status == 'done':
+            stats['done'] += 1
+            pstats['done'] += 1
+        else:
+            stats['repair'] += 1
+            pstats['repair'] += 1
 
 
 def run_pool(limit, *, lanes=None, queue=None, adapters=None):

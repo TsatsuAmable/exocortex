@@ -92,13 +92,30 @@ class ProviderBrokerTests(unittest.TestCase):
         ])
         self.assertEqual([broker.choose('non_sensitive').name for _ in range(4)], ['a','b','a','b'])
 
-    def test_default_pool_has_two_broker_lanes_and_one_qwen_lane(self):
+    def test_default_pool_has_three_cloud_first_lanes_and_no_dedicated_qwen_lane(self):
         lanes=worker_pool.default_lane_specs()
         self.assertEqual(len(lanes),3)
-        self.assertEqual(sum(x.mode=='broker' for x in lanes),2)
-        qwen=[x for x in lanes if x.mode=='qwen']
-        self.assertEqual(len(qwen),1)
-        self.assertIn('qwen3.5:4b', qwen[0].providers[0].model)
+        self.assertTrue(all(x.mode=='cloud-first' for x in lanes))
+        self.assertTrue(all(x.providers[-1].model=='qwen3.5:4b' for x in lanes))
+
+
+    def test_default_provider_chain_is_ollama_cloud_first_and_qwen_last(self):
+        lanes=worker_pool.default_lane_specs()
+        self.assertEqual(len(lanes),3)
+        for lane in lanes:
+            self.assertEqual(lane.providers[0].model,'glm-5.3:cloud')
+            self.assertTrue(lane.providers[0].remote)
+            self.assertEqual(lane.providers[-1].model,'qwen3.5:4b')
+            self.assertFalse(lane.providers[-1].remote)
+
+    def test_normal_chatgpt_segment_allows_remote_provider(self):
+        self.assertTrue(worker_pool.segment_allows_remote({'content':'ordinary project discussion','privacy':None}))
+
+    def test_explicit_local_only_segment_blocks_remote_provider(self):
+        self.assertFalse(worker_pool.segment_allows_remote({'content':'ordinary text','privacy':'local_only'}))
+
+    def test_secret_bearing_segment_blocks_remote_provider(self):
+        self.assertFalse(worker_pool.segment_allows_remote({'content':'Authorization: Bearer abcdefghijklmnopqrstuvwxyz123456','privacy':None}))
 
     def test_burn_in_budget_never_allocates_more_than_limit(self):
         budget=worker_pool.BurnInBudget(3)
@@ -181,6 +198,52 @@ class WorkerRuntimeTests(unittest.TestCase):
         self.assertEqual(stats['attempted'],1)
         self.assertEqual(stats['done'],1)
         self.assertEqual(stats['queue_errors'],1)
+
+
+    def test_provider_chain_falls_back_to_qwen_only_after_earlier_failures(self):
+        calls=[]
+        class OneQueue:
+            def __init__(self): self.claims=0; self.submitted=[]; self.released=[]
+            def claim(self,worker,count,privacy_scope):
+                self.claims+=1
+                if self.claims>1: return []
+                return [{'id':'s1','source_entity_id':'e1','source_ref':'src','content':'ordinary text','privacy':None}]
+            def submit(self,worker,segment_id,extractor,raw):
+                self.submitted.append(extractor); return {'ok':True,'segment_status':'done'}
+            def release(self,worker,segment_id,error): self.released.append(error); return {'ok':True}
+        lane=worker_pool.LaneSpec('one','cloud-first',(
+            worker_pool.ProviderSpec('cloud','fake','glm-5.3:cloud',True),
+            worker_pool.ProviderSpec('local','fake','gsvaineko-core:v1',False),
+            worker_pool.ProviderSpec('qwen','fake','qwen3.5:4b',False),
+        ))
+        def adapter(model,prompt):
+            calls.append(model)
+            if model!='qwen3.5:4b': raise RuntimeError('provider unavailable')
+            return ('{"items":[]}',{})
+        q=OneQueue()
+        stats=worker_pool.run_pool(1,lanes=(lane,),queue=q,adapters={'fake':adapter})['one']
+        self.assertEqual(calls,['glm-5.3:cloud','gsvaineko-core:v1','qwen3.5:4b'])
+        self.assertEqual(stats['done'],1)
+        self.assertEqual(q.submitted,['fake:qwen3.5:4b'])
+        self.assertEqual(q.released,[])
+
+    def test_local_only_segment_skips_cloud_and_uses_local_before_qwen(self):
+        calls=[]
+        class OneQueue:
+            def __init__(self): self.claims=0
+            def claim(self,worker,count,privacy_scope):
+                self.claims+=1
+                return [] if self.claims>1 else [{'id':'s1','source_entity_id':'e1','source_ref':'src','content':'ordinary','privacy':'local_only'}]
+            def submit(self,*args): return {'ok':True,'segment_status':'done'}
+            def release(self,*args): return {'ok':True}
+        lane=worker_pool.LaneSpec('one','cloud-first',(
+            worker_pool.ProviderSpec('cloud','fake','glm-5.3:cloud',True),
+            worker_pool.ProviderSpec('local','fake','gsvaineko-core:v1',False),
+            worker_pool.ProviderSpec('qwen','fake','qwen3.5:4b',False),
+        ))
+        stats=worker_pool.run_pool(1,lanes=(lane,),queue=OneQueue(),adapters={'fake':lambda m,p:(calls.append(m) or ('{"items":[]}',{}))})['one']
+        self.assertEqual(calls,['gsvaineko-core:v1'])
+        self.assertEqual(stats['done'],1)
 
     def test_pool_processes_exact_budget_with_stateless_lanes(self):
         class FakeQueue:
