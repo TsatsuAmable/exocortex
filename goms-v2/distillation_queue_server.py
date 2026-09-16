@@ -13,6 +13,7 @@ DB = Path(os.environ.get('GOMS_DB', ROOT / 'goms.sqlite3'))
 HOST = os.environ.get('GOMS_QUEUE_HOST', '100.109.209.29')
 PORT = int(os.environ.get('GOMS_QUEUE_PORT', '8767'))
 ALLOWED = {x.strip() for x in os.environ.get('GOMS_QUEUE_ALLOWED', '100.109.209.29,100.66.115.49,127.0.0.1').split(',') if x.strip()}
+DB_BUSY_TIMEOUT_MS = int(os.environ.get('GOMS_DB_BUSY_TIMEOUT_MS', '15000'))
 
 def now():
     return datetime.now(timezone.utc)
@@ -27,10 +28,21 @@ def hid(prefix, *parts):
 def segment_status_for_recovered(recovered):
     return 'done' if recovered != 0 else 'repair'
 
-def claim(worker, count, *, db_path=DB, privacy_scope='private', lease_seconds=600):
+def db_connect(db_path=DB, busy_timeout_ms=None):
+    wait_ms = DB_BUSY_TIMEOUT_MS if busy_timeout_ms is None else max(0, int(busy_timeout_ms))
+    c = sqlite3.connect(db_path, timeout=max(0.001, wait_ms / 1000.0))
+    c.execute(f'PRAGMA busy_timeout={wait_ms}')
+    return c
+
+
+def is_db_busy_error(exc):
+    text = str(exc).lower()
+    return isinstance(exc, sqlite3.OperationalError) and ('database is locked' in text or 'database is busy' in text)
+
+def claim(worker, count, *, db_path=DB, privacy_scope='private', lease_seconds=600, db_busy_timeout_ms=None):
     if privacy_scope not in {'private', 'non_sensitive'}:
         raise ValueError(f'unsupported privacy scope: {privacy_scope}')
-    with closing(sqlite3.connect(db_path)) as c:
+    with closing(db_connect(db_path, db_busy_timeout_ms)) as c:
         c.row_factory = sqlite3.Row
         c.execute('BEGIN IMMEDIATE')
         expiry = iso(now() + timedelta(seconds=lease_seconds))
@@ -56,7 +68,7 @@ def claim(worker, count, *, db_path=DB, privacy_scope='private', lease_seconds=6
         return out
 
 def release(worker, segment_id, error=None, *, db_path=DB):
-    with closing(sqlite3.connect(db_path)) as c:
+    with closing(db_connect(db_path)) as c:
         cur = c.execute("update distillation_segments set status='pending',lease_owner=null, lease_until=null,last_error=?,updated_at=? where id=? and lease_owner=?",
                         ((error or '')[:1000] or None, iso(), segment_id, worker))
         c.commit()
@@ -64,7 +76,7 @@ def release(worker, segment_id, error=None, *, db_path=DB):
 
 def submit(worker, segment_id, extractor, raw, *, db_path=DB):
     from distillation_salvage import process_work
-    with closing(sqlite3.connect(db_path)) as c:
+    with closing(db_connect(db_path)) as c:
         c.row_factory = sqlite3.Row
         row = c.execute('select lease_owner from distillation_segments where id=?', (segment_id,)).fetchone()
         if not row or row['lease_owner'] != worker:
@@ -128,20 +140,25 @@ class Handler(BaseHTTPRequestHandler):
             return self.sendj(401, {'error': 'unauthorized'})
         n = int(self.headers.get('Content-Length','0'))
         body = json.loads(self.rfile.read(n) or b'{}')
-        if self.path == '/claim':
-            scope = str(body.get('privacy_scope') or 'private')
-            try:
-                rows = claim(str(body.get('worker')), int(body.get('count',5)), privacy_scope=scope)
-            except ValueError as exc:
-                return self.sendj(400, {'error': str(exc)})
-            return self.sendj(200, {'segments': rows})
-        if self.path == '/release':
-            ok = release(str(body.get('worker')), str(body.get('segment_id')), str(body.get('error') or ''))
-            return self.sendj(200 if ok else 409, {'ok': ok, 'error': None if ok else 'lease_not_owned'})
-        if self.path == '/submit':
-            obj, code = submit(str(body.get('worker')), str(body.get('segment_id')),
-                               str(body.get('extractor')), str(body.get('raw') or ''))
-            return self.sendj(code, obj)
+        try:
+            if self.path == '/claim':
+                scope = str(body.get('privacy_scope') or 'private')
+                try:
+                    rows = claim(str(body.get('worker')), int(body.get('count',5)), privacy_scope=scope)
+                except ValueError as exc:
+                    return self.sendj(400, {'error': str(exc)})
+                return self.sendj(200, {'segments': rows})
+            if self.path == '/release':
+                ok = release(str(body.get('worker')), str(body.get('segment_id')), str(body.get('error') or ''))
+                return self.sendj(200 if ok else 409, {'ok': ok, 'error': None if ok else 'lease_not_owned'})
+            if self.path == '/submit':
+                obj, code = submit(str(body.get('worker')), str(body.get('segment_id')),
+                                   str(body.get('extractor')), str(body.get('raw') or ''))
+                return self.sendj(code, obj)
+        except sqlite3.OperationalError as exc:
+            if is_db_busy_error(exc):
+                return self.sendj(503, {'error': 'database_busy'})
+            raise
         return self.sendj(404, {'error': 'not_found'})
 
     def log_message(self, fmt, *args):

@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 from contextlib import closing
+import http.client
 import json
 import sqlite3
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -60,6 +63,18 @@ class QueueLeaseTests(unittest.TestCase):
         self.assertEqual(queue_server.segment_status_for_recovered(2),'done')
         self.assertEqual(queue_server.segment_status_for_recovered(0),'repair')
 
+    def test_claim_waits_through_short_writer_contention(self):
+        locker=sqlite3.connect(self.db,check_same_thread=False)
+        locker.execute('BEGIN IMMEDIATE')
+        releaser=threading.Thread(target=lambda: (time.sleep(0.05),locker.commit()))
+        releaser.start()
+        try:
+            rows=queue_server.claim('waiter',1,db_path=self.db,privacy_scope='private',db_busy_timeout_ms=1000)
+        finally:
+            releaser.join(); locker.close()
+        self.assertEqual(len(rows),1)
+
+
 
 class ProviderBrokerTests(unittest.TestCase):
     def test_private_work_never_selects_remote_provider(self):
@@ -112,6 +127,23 @@ class QueueEndpointDiscoveryTests(unittest.TestCase):
             "http://127.0.0.1:8767",
         )
 
+class QueueTransportTests(unittest.TestCase):
+    def test_http_client_retries_transient_disconnect(self):
+        calls=[]
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self,*args): return False
+            def read(self,*args): return b'{"segments":[]}'
+        def opener(req,timeout):
+            calls.append(req.full_url)
+            if len(calls)==1:
+                raise http.client.RemoteDisconnected('temporary disconnect')
+            return Response()
+        client=worker_pool.QueueHTTPClient('http://queue',opener=opener,sleep=lambda _:None,retries=2)
+        self.assertEqual(client.claim('w',1,'private'),[])
+        self.assertEqual(len(calls),2)
+
+
 class WorkerRuntimeTests(unittest.TestCase):
     def test_remote_provider_claims_only_non_sensitive_scope(self):
         remote=worker_pool.ProviderSpec('r','opencode','model',True)
@@ -133,6 +165,22 @@ class WorkerRuntimeTests(unittest.TestCase):
         self.assertEqual(raw,'{}')
         self.assertEqual(meta['ok'],1)
         self.assertEqual(seen,[('m','p')])
+
+    def test_lane_survives_transient_claim_failure_without_spending_budget(self):
+        class FlakyQueue:
+            def __init__(self): self.calls=0; self.submitted=[]
+            def claim(self,worker,count,privacy_scope):
+                self.calls+=1
+                if self.calls==1: raise OSError('temporary queue failure')
+                return [{'id':'s1','source_entity_id':'e1','source_ref':'src','content':'c','privacy':None}]
+            def submit(self,worker,segment_id,extractor,raw):
+                self.submitted.append(segment_id); return {'ok':True,'segment_status':'done'}
+            def release(self,worker,segment_id,error): return {'ok':True}
+        lane=worker_pool.LaneSpec('one','broker',(worker_pool.ProviderSpec('p','fake','m',False),))
+        stats=worker_pool.run_pool(1,lanes=(lane,),queue=FlakyQueue(),adapters={'fake':lambda m,p: ('{"items":[]}',{})})['one']
+        self.assertEqual(stats['attempted'],1)
+        self.assertEqual(stats['done'],1)
+        self.assertEqual(stats['queue_errors'],1)
 
     def test_pool_processes_exact_budget_with_stateless_lanes(self):
         class FakeQueue:

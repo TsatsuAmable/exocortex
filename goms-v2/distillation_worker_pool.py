@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 import argparse
+import http.client
 import json
 import os
 import socket
 import subprocess
 import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -145,14 +147,31 @@ def default_queue_url(*, env=None, tailscale_ip=None):
 
 
 class QueueHTTPClient:
-    def __init__(self, base_url=None):
+    def __init__(self, base_url=None, *, opener=None, sleep=None, retries=4, retry_delay=0.2):
         self.base_url = (base_url or default_queue_url()).rstrip('/')
+        self._opener = opener or urllib.request.urlopen
+        self._sleep = sleep or time.sleep
+        self.retries = max(1, int(retries))
+        self.retry_delay = max(0.0, float(retry_delay))
 
     def _post(self, path, body):
         req = urllib.request.Request(self.base_url + path, data=json.dumps(body).encode(),
                                      headers={'Content-Type':'application/json'})
-        with urllib.request.urlopen(req, timeout=30) as response:
-            return json.load(response)
+        last_error = None
+        for attempt in range(self.retries):
+            try:
+                with self._opener(req, timeout=30) as response:
+                    return json.load(response)
+            except urllib.error.HTTPError as exc:
+                if exc.code not in (429, 502, 503, 504):
+                    raise
+                last_error = exc
+            except (http.client.RemoteDisconnected, urllib.error.URLError,
+                    ConnectionResetError, ConnectionRefusedError, TimeoutError) as exc:
+                last_error = exc
+            if attempt + 1 < self.retries:
+                self._sleep(self.retry_delay * (attempt + 1))
+        raise last_error
 
     def claim(self, worker, count, privacy_scope):
         return self._post('/claim', {'worker':worker,'count':count,'privacy_scope':privacy_scope}).get('segments', [])
@@ -183,7 +202,7 @@ def default_lane_specs():
 
 def _new_stats(lane):
     return {'lane':lane.name,'mode':lane.mode,'attempted':0,'done':0,'repair':0,
-            'provider_errors':0,'claim_empty':0,'elapsed_s':0.0,'providers':{}}
+            'provider_errors':0,'queue_errors':0,'claim_empty':0,'elapsed_s':0.0,'providers':{}}
 
 
 def _run_lane(lane, budget, queue, adapters, stats):
@@ -197,7 +216,16 @@ def _run_lane(lane, budget, queue, adapters, stats):
         if provider is None:
             budget.refund(); return
         scope = privacy_scope_for(provider)
-        rows = queue.claim(worker, 1, scope)
+        try:
+            rows = queue.claim(worker, 1, scope)
+        except Exception:
+            budget.refund()
+            stats['queue_errors'] += 1
+            empty_streak += 1
+            if empty_streak >= max(3, len(lane.providers) * 2):
+                return
+            time.sleep(min(0.5, 0.05 * empty_streak))
+            continue
         if not rows:
             budget.refund()
             stats['claim_empty'] += 1
