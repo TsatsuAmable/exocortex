@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from distillation_model_client import generate_structured, REMOTE_MODEL_CHAIN, LOCAL_MODEL_CHAIN, prompt_allows_remote
+from distillation_graphshape_policy import select_pending_shape_reviews
 
 ROOT=Path.home()/"Library/Application Support/Aineko/GOMS"
 DB=ROOT/"goms.sqlite3"
@@ -46,11 +47,7 @@ with closing(sqlite3.connect(DB)) as c, c:
       subject_title TEXT,subject_type TEXT,predicate TEXT,
       object_title TEXT,object_type TEXT,literal TEXT,
       reviewer_model TEXT,reviewed_at TEXT);""")
-    rows=[dict(r) for r in c.execute("""select p.*,g.score,g.reasons
-      from distillation_reconciliation_proposals p
-      join distillation_promotion_gate g on g.candidate_id=p.candidate_id
-      where g.decision='AUTO_READY'
-      order by g.score desc""").fetchall()]
+    rows=select_pending_shape_reviews(c,limit=12)
     payload=[]
     for r in rows:
         payload.append({

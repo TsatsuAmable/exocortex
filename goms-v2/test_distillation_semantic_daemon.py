@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 import distillation_reconcile_policy as reconcile_policy
+import distillation_graphshape_policy as graphshape_policy
 import distillation_semantic_daemon as semantic_daemon
 
 
@@ -31,6 +32,24 @@ class ReconcilePolicyTests(unittest.TestCase):
                 if pstatus: c.execute("insert into distillation_reconciliation_proposals values(?,?)",(cid,pstatus))
             selected=reconcile_policy.select_eligible_candidates(c,limit=20)
         self.assertEqual({x['id'] for x in selected},{'stream-ok','legacy-ok'})
+
+
+class GraphShapePolicyTests(unittest.TestCase):
+    def test_selects_only_missing_auto_ready_reviews_with_limit(self):
+        with closing(sqlite3.connect(':memory:')) as c:
+            c.row_factory=sqlite3.Row
+            c.executescript('''
+              create table distillation_reconciliation_proposals(candidate_id text primary key,status text,canonical_kind text,subject_mode text,subject_id text,subject_type text,subject_title text,predicate text,object_mode text,object_id text,object_type text,object_title text,literal text);
+              create table distillation_promotion_gate(candidate_id text primary key,decision text,score real,reasons text);
+              create table distillation_graphshape_reviews(candidate_id text primary key,verdict text);
+            ''')
+            for i in range(5):
+                cid=f'c{i}'
+                c.execute("insert into distillation_reconciliation_proposals values(?,?,?,?,?,?,?,?,?,?,?,?,?)",(cid,'candidate','decision','new',None,'idea',cid,'p','literal',None,None,None,'x'))
+                c.execute("insert into distillation_promotion_gate values(?,?,?,?)",(cid,'AUTO_READY',.9,'[]'))
+            c.execute("insert into distillation_graphshape_reviews values('c0','ACCEPT')")
+            rows=graphshape_policy.select_pending_shape_reviews(c,limit=2)
+        self.assertEqual([r['candidate_id'] for r in rows],['c1','c2'])
 
 
 class SemanticDaemonTests(unittest.TestCase):
