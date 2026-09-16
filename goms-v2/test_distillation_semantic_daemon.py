@@ -62,4 +62,10 @@ class SemanticDaemonTests(unittest.TestCase):
         self.assertIsNone(semantic_daemon.choose_stage({'unvalidated':0,'unreconciled':0,'gate_missing':0,'shape_missing':0,'promotable':0},cursor=4))
 
 
+    def test_stage_plan_can_pause_promotion_without_pausing_upstream(self):
+        counts={"unvalidated":0,"unreconciled":0,"gate_missing":0,"shape_missing":0,"promotable":7}
+        self.assertIsNone(semantic_daemon.choose_stage(counts,cursor=4,promotion_enabled=False))
+        counts["shape_missing"]=3
+        self.assertEqual(semantic_daemon.choose_stage(counts,cursor=4,promotion_enabled=False),"shape")
+
 if __name__=='__main__': unittest.main(verbosity=2)

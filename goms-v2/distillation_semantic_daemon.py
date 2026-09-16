@@ -2,6 +2,7 @@
 from contextlib import closing
 import fcntl
 import json
+import os
 import sqlite3
 import subprocess
 import time
@@ -34,11 +35,13 @@ def stage_counts(db_path=DB):
         return q
 
 
-def choose_stage(counts, cursor=0):
+def choose_stage(counts, cursor=0, promotion_enabled=True):
     keys={'validate':'unvalidated','reconcile':'unreconciled','gate':'gate_missing','shape':'shape_missing','promote':'promotable'}
     start=int(cursor) % len(STAGE_ORDER)
     for offset in range(len(STAGE_ORDER)):
         stage=STAGE_ORDER[(start+offset) % len(STAGE_ORDER)]
+        if stage=='promote' and not promotion_enabled:
+            continue
         if int(counts.get(keys[stage],0)) > 0:
             return stage
     return None
@@ -54,9 +57,10 @@ def run_forever(active_sleep=1.0, idle_sleep=15.0):
     with LOCK.open('w') as lock:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX|fcntl.LOCK_NB)
         cursor=0
+        promotion_enabled=os.getenv('GOMS_PROMOTION_ENABLED','1').strip().lower() not in ('0','false','no','off')
         while True:
             counts = stage_counts()
-            stage = choose_stage(counts,cursor=cursor)
+            stage = choose_stage(counts,cursor=cursor,promotion_enabled=promotion_enabled)
             result = {'observed_at':datetime.now(timezone.utc).isoformat(),'counts':counts,'stage':stage}
             if stage:
                 cursor=(STAGE_ORDER.index(stage)+1) % len(STAGE_ORDER)
