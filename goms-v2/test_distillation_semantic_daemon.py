@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 from contextlib import closing
+import plistlib
 import sqlite3
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 import distillation_reconcile_policy as reconcile_policy
 import distillation_graphshape_policy as graphshape_policy
@@ -134,5 +138,17 @@ class SemanticDaemonTests(unittest.TestCase):
         self.assertIsNone(semantic_daemon.choose_stage(counts,cursor=6,promotion_enabled=False))
         counts["shape_missing"]=3
         self.assertEqual(semantic_daemon.choose_stage(counts,cursor=6,promotion_enabled=False),"shape")
+
+    def test_run_stage_uses_daemon_interpreter(self):
+        completed=SimpleNamespace(returncode=0,stdout='',stderr='')
+        with mock.patch.object(semantic_daemon.subprocess,'run',return_value=completed) as run:
+            semantic_daemon.run_stage('surface',root=Path('/tmp/goms'))
+        self.assertEqual(run.call_args.args[0][0],sys.executable)
+
+    def test_launchagent_resolves_python_from_modern_path(self):
+        plist_path=Path(__file__).with_name('launchd')/'org.aineko.goms-distillation-semantic.plist'
+        with plist_path.open('rb') as f:
+            args=plistlib.load(f)['ProgramArguments']
+        self.assertEqual(args[:2],['/usr/bin/env','python3'])
 
 if __name__=='__main__': unittest.main(verbosity=2)

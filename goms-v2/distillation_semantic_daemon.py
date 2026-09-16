@@ -5,6 +5,7 @@ import json
 import os
 import sqlite3
 import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -50,7 +51,7 @@ def choose_stage(counts, cursor=0, promotion_enabled=True):
 
 def run_stage(stage, root=ROOT):
     script = SCRIPTS[stage]
-    cp = subprocess.run(['/usr/bin/python3', str(Path(root)/script)], cwd=root, text=True, capture_output=True, timeout=300)
+    cp = subprocess.run([sys.executable, str(Path(root)/script)], cwd=root, text=True, capture_output=True, timeout=300)
     return {'stage':stage,'returncode':cp.returncode,'stdout':cp.stdout[-4000:],'stderr':cp.stderr[-4000:]}
 
 

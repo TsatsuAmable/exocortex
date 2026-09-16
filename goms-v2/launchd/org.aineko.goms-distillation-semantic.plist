@@ -5,7 +5,8 @@
   <key>Label</key><string>org.aineko.goms-distillation-semantic</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/python3</string>
+    <string>/usr/bin/env</string>
+    <string>python3</string>
     <string>/Users/tsatsuamable/Library/Application Support/Aineko/GOMS/distillation_semantic_daemon.py</string>
   </array>
   <key>WorkingDirectory</key><string>/Users/tsatsuamable/Library/Application Support/Aineko/GOMS</string>
