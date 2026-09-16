@@ -4,6 +4,8 @@ import json, sqlite3, urllib.request
 from datetime import datetime,timezone
 from pathlib import Path
 
+from distillation_reconcile_policy import select_eligible_candidates
+
 ROOT=Path.home()/"Library/Application Support/Aineko/GOMS"
 DB=ROOT/"goms.sqlite3"
 BROKER="http://127.0.0.1:8765/v1/generate"
@@ -47,10 +49,6 @@ with closing(sqlite3.connect(DB)) as c, c:
       predicate TEXT,object_mode TEXT,object_id TEXT,object_type TEXT,
       object_title TEXT,literal TEXT,confidence REAL,rationale TEXT,
       status TEXT DEFAULT 'candidate',created_at TEXT);""")
-    run=c.execute("""select id from distillation_runs
-      where status in ('SUCCESS','DEGRADED')
-      order by started_at desc limit 1""").fetchone()[0]
-
     existing=[dict(r) for r in c.execute("""select id,type,title,summary
       from entities where type not in ('evidence','source')
       order by type,title limit 300""").fetchall()]
@@ -63,15 +61,7 @@ with closing(sqlite3.connect(DB)) as c, c:
         predicate_map[norm(pr["canonical"])]=pr["canonical"]
         for a in json.loads(pr["aliases"] or "[]"):
             predicate_map[norm(a)]=pr["canonical"]
-    eligible=[dict(r) for r in c.execute("""select d.*,v.verdict,v.validated_kind,
-      v.durability,v.confidence validator_confidence,v.rationale validator_rationale
-      from distillation_candidates d
-      join distillation_validations v on v.candidate_id=d.id
-      where d.run_id=?
-        and v.verdict in ('accept','reclassify')
-        and v.durability in ('project','enduring')
-        and d.confidence>=0.80 and v.confidence>=0.80
-      order by v.confidence desc""",(run,)).fetchall()]
+    eligible=select_eligible_candidates(c,limit=60)
 
     errors=[]; written=0
     allowed_ids={e["id"] for e in existing}
@@ -128,4 +118,4 @@ with closing(sqlite3.connect(DB)) as c, c:
                str(x.get("rationale") or ""),"candidate",now()))
             written+=1
         c.commit()
-    print(json.dumps({"run":run,"eligible":len(eligible),"written":written,"errors":errors},indent=2))
+    print(json.dumps({"mode":"incremental","eligible":len(eligible),"written":written,"errors":errors},indent=2))
