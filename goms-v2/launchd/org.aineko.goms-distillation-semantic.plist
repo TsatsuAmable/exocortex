@@ -10,7 +10,7 @@
   </array>
   <key>WorkingDirectory</key><string>/Users/tsatsuamable/Library/Application Support/Aineko/GOMS</string>
   <key>EnvironmentVariables</key>
-  <dict><key>PATH</key><string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string><key>GOMS_PROMOTION_ENABLED</key><string>0</string></dict>
+  <dict><key>PATH</key><string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string><key>GOMS_PROMOTION_ENABLED</key><string>1</string></dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>5</integer>
