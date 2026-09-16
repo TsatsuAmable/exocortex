@@ -179,6 +179,10 @@ class WorkerRuntimeTests(unittest.TestCase):
         self.assertIn('SOURCE: chatgpt://conversation/x',prompt)
         self.assertIn('Keep durable state.',prompt)
 
+    def test_normalize_structured_output_strips_markdown_json_fence(self):
+        raw='```json\n{"items": []}\n```'
+        self.assertEqual(worker_pool.normalize_structured_output(raw),'{"items": []}')
+
     def test_ollama_adapter_disables_thinking_for_structured_extraction(self):
         seen={}
         class Response(io.BytesIO):

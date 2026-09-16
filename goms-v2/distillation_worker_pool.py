@@ -98,6 +98,18 @@ def providers_for_segment(lane, segment):
     return tuple(p for p in lane.providers if allow_remote or not p.remote)
 
 
+def normalize_structured_output(raw):
+    text = str(raw or '').strip()
+    if text.startswith('```') and text.endswith('```'):
+        lines = text.splitlines()
+        if lines and lines[0].strip().lower() in ('```json', '```'):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == '```':
+            lines = lines[:-1]
+        text = '\n'.join(lines).strip()
+    return text
+
+
 def build_prompt(segment):
     return (PROMPT + '\nEVIDENCE_ID: ' + str(segment['source_entity_id']) +
             '\nSOURCE: ' + str(segment.get('source_ref') or '') +
@@ -118,7 +130,7 @@ def ollama_adapter(model, prompt):
     started = time.perf_counter()
     with urllib.request.urlopen(req, timeout=180) as response:
         data = json.load(response)
-    return (data.get('response') or data.get('thinking') or ''), {
+    return normalize_structured_output(data.get('response') or data.get('thinking') or ''), {
         'elapsed_s': time.perf_counter() - started,
         'prompt_eval_count': data.get('prompt_eval_count'),
         'eval_count': data.get('eval_count'),
