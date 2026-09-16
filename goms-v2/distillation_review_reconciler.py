@@ -72,6 +72,21 @@ def _action(row):
     return 'HOLD',(reasons[0] if reasons else 'UNCLASSIFIED_REVIEW')
 
 
+
+def unadjudicated_review_count(connection):
+    ensure_schema(connection)
+    connection.row_factory=sqlite3.Row
+    seen={(r[0],r[1]) for r in connection.execute(
+        'select candidate_id,gate_fingerprint from distillation_review_adjudications').fetchall()}
+    rows=connection.execute('''
+      select p.*,g.decision,g.score,g.reasons,g.subject_resolution,g.object_resolution,
+             g.contradiction_count,g.checked_at gate_checked_at
+      from distillation_reconciliation_proposals p
+      join distillation_promotion_gate g on g.candidate_id=p.candidate_id
+      where p.status='candidate' and g.decision='REVIEW'
+    ''').fetchall()
+    return sum(1 for row in rows if (row['candidate_id'],_gate_fingerprint(row)) not in seen)
+
 def reconcile_review_batch(connection, limit=50, observed_at=None):
     ensure_schema(connection)
     ts=observed_at or now()

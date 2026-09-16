@@ -9,16 +9,19 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from distillation_review_reconciler import unadjudicated_review_count
+
 ROOT = Path.home()/"Library/Application Support/Aineko/GOMS"
 DB = ROOT/"goms.sqlite3"
 LOCK = ROOT/"distillation_semantic_daemon.lock"
 
-STAGE_ORDER = ('validate','reconcile','gate','shape','promote')
+STAGE_ORDER = ('validate','reconcile','gate','adjudicate','shape','promote')
 
 SCRIPTS = {
     'validate': 'distillation_validate_incremental.py',
     'reconcile': 'distillation_reconcile.py',
     'gate': 'distillation_promotion_gate.py',
+    'adjudicate': 'distillation_review_reconciler.py',
     'shape': 'distillation_graphshape_review.py',
     'promote': 'distillation_promote.py',
 }
@@ -30,13 +33,14 @@ def stage_counts(db_path=DB):
         q['unvalidated'] = c.execute("""select count(*) from distillation_candidates d left join distillation_validations v on v.candidate_id=d.id where v.candidate_id is null""").fetchone()[0]
         q['unreconciled'] = c.execute("""select count(*) from distillation_candidates d join distillation_validations v on v.candidate_id=d.id left join distillation_reconciliation_proposals p on p.candidate_id=d.id where p.candidate_id is null and v.verdict in ('accept','reclassify') and v.durability in ('project','enduring') and d.confidence>=0.80 and v.confidence>=0.80""").fetchone()[0]
         q['gate_missing'] = c.execute("""select count(*) from distillation_reconciliation_proposals p left join distillation_promotion_gate g on g.candidate_id=p.candidate_id where p.status='candidate' and g.candidate_id is null""").fetchone()[0]
+        q['review_actionable'] = unadjudicated_review_count(c)
         q['shape_missing'] = c.execute("""select count(*) from distillation_promotion_gate g left join distillation_graphshape_reviews s on s.candidate_id=g.candidate_id where g.decision='AUTO_READY' and s.candidate_id is null""").fetchone()[0]
         q['promotable'] = c.execute("""select count(*) from distillation_reconciliation_proposals p join distillation_promotion_gate g on g.candidate_id=p.candidate_id join distillation_graphshape_reviews s on s.candidate_id=p.candidate_id where p.status='candidate' and g.decision='AUTO_READY' and s.verdict='ACCEPT'""").fetchone()[0]
         return q
 
 
 def choose_stage(counts, cursor=0, promotion_enabled=True):
-    keys={'validate':'unvalidated','reconcile':'unreconciled','gate':'gate_missing','shape':'shape_missing','promote':'promotable'}
+    keys={'validate':'unvalidated','reconcile':'unreconciled','gate':'gate_missing','adjudicate':'review_actionable','shape':'shape_missing','promote':'promotable'}
     start=int(cursor) % len(STAGE_ORDER)
     for offset in range(len(STAGE_ORDER)):
         stage=STAGE_ORDER[(start+offset) % len(STAGE_ORDER)]
