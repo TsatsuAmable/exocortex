@@ -387,3 +387,147 @@ CREATE INDEX IF NOT EXISTS idx_alerts_state_severity
   ON alerts(state,severity,updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_alerts_intent
   ON alerts(intent_id,state,updated_at DESC);
+
+-- Streaming distillation queue contract (reconciled from deployed P0)
+CREATE TABLE IF NOT EXISTS distillation_adjudications (
+  candidate_id TEXT PRIMARY KEY,
+  status TEXT NOT NULL,
+  canonicalizable INTEGER NOT NULL,
+  confidence REAL NOT NULL,
+  rationale TEXT NOT NULL,
+  adjudicator TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS distillation_artifacts(
+  id TEXT PRIMARY KEY,
+  source_entity_id TEXT,
+  source_ref TEXT,
+  content_sha256 TEXT NOT NULL,
+  byte_count INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'ingested',
+  metadata TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS distillation_candidates(id TEXT PRIMARY KEY,run_id TEXT,kind TEXT,subject TEXT,predicate TEXT,object TEXT,literal TEXT,confidence REAL,evidence_ids TEXT,status TEXT DEFAULT 'candidate',created_at TEXT, segment_id text, source_entity_id text, extractor_model text, metadata text not null default '{}');
+CREATE TABLE IF NOT EXISTS distillation_claim_candidates(
+  work_id TEXT NOT NULL,
+  candidate_id TEXT NOT NULL,
+  ordinal INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY(work_id,candidate_id)
+);
+CREATE TABLE IF NOT EXISTS distillation_claim_work(
+  id TEXT PRIMARY KEY,
+  segment_id TEXT NOT NULL,
+  extractor TEXT,
+  raw_record TEXT,
+  parsed_record TEXT,
+  validation_status TEXT NOT NULL DEFAULT 'pending',
+  salvage_state TEXT NOT NULL DEFAULT 'none',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  candidate_id TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+, parent_work_id text, route_stage text, model_cost real);
+CREATE TABLE IF NOT EXISTS distillation_evidence_state (
+  evidence_id TEXT PRIMARY KEY,
+  last_run_id TEXT,
+  status TEXT NOT NULL,
+  processed_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS distillation_gold (
+  candidate_id TEXT PRIMARY KEY,
+  expected_status TEXT NOT NULL,
+  canonicalizable INTEGER NOT NULL,
+  rationale TEXT NOT NULL,
+  labeled_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS distillation_graphshape_review_history(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  candidate_id TEXT NOT NULL,
+  reviewer_model TEXT NOT NULL,
+  verdict TEXT NOT NULL,
+  rationale TEXT,
+  subject_title TEXT,subject_type TEXT,predicate TEXT,
+  object_title TEXT,object_type TEXT,literal TEXT,
+  reviewed_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS distillation_graphshape_reviews(
+      candidate_id TEXT PRIMARY KEY, verdict TEXT NOT NULL, rationale TEXT,
+      subject_title TEXT,subject_type TEXT,predicate TEXT,
+      object_title TEXT,object_type TEXT,literal TEXT,
+      reviewer_model TEXT,reviewed_at TEXT);
+CREATE TABLE IF NOT EXISTS distillation_metrics(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  observed_at TEXT NOT NULL,
+  window_seconds INTEGER NOT NULL,
+  segments_total INTEGER NOT NULL DEFAULT 0,
+  segments_done INTEGER NOT NULL DEFAULT 0,
+  claims_total INTEGER NOT NULL DEFAULT 0,
+  claims_valid INTEGER NOT NULL DEFAULT 0,
+  claims_quarantined INTEGER NOT NULL DEFAULT 0,
+  retries INTEGER NOT NULL DEFAULT 0,
+  salvage_success INTEGER NOT NULL DEFAULT 0,
+  provenance_complete INTEGER NOT NULL DEFAULT 0,
+  governor_backlog INTEGER NOT NULL DEFAULT 0,
+  promotion_backlog INTEGER NOT NULL DEFAULT 0,
+  metadata TEXT NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS distillation_promotion_gate(
+      candidate_id TEXT PRIMARY KEY, decision TEXT NOT NULL, score REAL NOT NULL,
+      reasons TEXT NOT NULL DEFAULT '[]', subject_resolution TEXT,
+      object_resolution TEXT, contradiction_count INTEGER NOT NULL DEFAULT 0,
+      checked_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS distillation_ready(
+      candidate_id TEXT PRIMARY KEY,status TEXT NOT NULL,confidence REAL NOT NULL,
+      reason TEXT NOT NULL,ready_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS distillation_reconciliation_proposals(
+      candidate_id TEXT PRIMARY KEY, canonical_kind TEXT,
+      subject_mode TEXT,subject_id TEXT,subject_type TEXT,subject_title TEXT,
+      predicate TEXT,object_mode TEXT,object_id TEXT,object_type TEXT,
+      object_title TEXT,literal TEXT,confidence REAL,rationale TEXT,
+      status TEXT DEFAULT 'candidate',created_at TEXT);
+CREATE TABLE IF NOT EXISTS distillation_resolutions(
+      candidate_id TEXT PRIMARY KEY,subject_entity_id TEXT,object_entity_id TEXT,
+      create_subject INTEGER NOT NULL DEFAULT 0,create_object INTEGER NOT NULL DEFAULT 0,
+      confidence REAL NOT NULL,rationale TEXT NOT NULL,resolver TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS distillation_runs(id TEXT PRIMARY KEY,started_at TEXT,completed_at TEXT,status TEXT,evidence_count INTEGER DEFAULT 0,item_count INTEGER DEFAULT 0,metadata TEXT DEFAULT '{}');
+CREATE TABLE IF NOT EXISTS distillation_salvage_events(
+  id TEXT PRIMARY KEY,
+  work_id TEXT NOT NULL,
+  stage TEXT NOT NULL,
+  action TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  model TEXT,
+  detail TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS distillation_segments(
+  id TEXT PRIMARY KEY,
+  artifact_id TEXT NOT NULL,
+  ordinal INTEGER NOT NULL,
+  start_offset INTEGER,
+  end_offset INTEGER,
+  content_sha256 TEXT NOT NULL,
+  content TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  metadata TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL, priority integer not null default 0, lease_owner text, lease_until text, last_model text,
+  UNIQUE(artifact_id,ordinal)
+);
+CREATE TABLE IF NOT EXISTS distillation_validations(
+      candidate_id TEXT PRIMARY KEY,validator_model TEXT,verdict TEXT,
+      validated_kind TEXT,durability TEXT,confidence REAL,rationale TEXT,
+      validated_at TEXT);
+CREATE INDEX IF NOT EXISTS idx_claim_candidates_candidate ON distillation_claim_candidates(candidate_id);
+CREATE INDEX IF NOT EXISTS idx_claim_work_state ON distillation_claim_work(validation_status,salvage_state);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dist_artifact_sha ON distillation_artifacts(content_sha256);
+CREATE INDEX IF NOT EXISTS idx_dist_segments_lease on distillation_segments(status,priority desc,lease_until);
+CREATE INDEX IF NOT EXISTS idx_dist_segments_status ON distillation_segments(status,updated_at);
+CREATE INDEX IF NOT EXISTS idx_graphshape_history_candidate
+ON distillation_graphshape_review_history(candidate_id,reviewed_at);
