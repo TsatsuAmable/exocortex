@@ -17,10 +17,10 @@ create table distillation_segments(id text primary key, artifact_id text not nul
 """
 
 
-def seed_segment(c, sid, role='user', privacy=None, priority=0):
+def seed_segment(c, sid, role='user', privacy=None, priority=0, tags=None):
     eid=f'e_{sid}'
     aid=f'a_{sid}'
-    c.execute('insert into entities(id,tags,metadata) values(?,?,?)', (eid, json.dumps(['chatgpt','message',role]), '{}'))
+    c.execute('insert into entities(id,tags,metadata) values(?,?,?)', (eid, json.dumps(tags or ['chatgpt','message',role]), '{}'))
     c.execute('insert into distillation_artifacts(id,source_entity_id,source_ref,metadata) values(?,?,?,?)', (aid,eid,f'chatgpt://{sid}','{}'))
     meta={} if privacy is None else {'privacy': privacy}
     c.execute("insert into distillation_segments(id,artifact_id,ordinal,content_sha256,content,status,metadata,created_at,updated_at,priority) values(?,?,?,?,?,'pending',?,?,?,?)", (sid,aid,0,f'h_{sid}',f'text {sid}',json.dumps(meta),'2026-09-16T00:00:00+00:00','2026-09-16T00:00:00+00:00',priority))
@@ -35,6 +35,7 @@ class QueueLeaseTests(unittest.TestCase):
             seed_segment(c,'private-user','user',None,3)
             seed_segment(c,'public-user','user','non_sensitive',2)
             seed_segment(c,'public-assistant','assistant','non_sensitive',9)
+            seed_segment(c,'other-user','user',None,10,tags=['other-source','message','user'])
             c.commit()
 
     def tearDown(self):

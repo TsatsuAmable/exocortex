@@ -41,7 +41,10 @@ def claim(worker, count, *, db_path=DB, privacy_scope='private', lease_seconds=6
           join distillation_artifacts a on a.id=s.artifact_id
           join entities e on e.id=a.source_entity_id
           where (s.status='pending' or (s.status='leased' and (s.lease_until is null or s.lease_until<?)))
-            and e.tags like '%"user"%' {privacy_sql}
+            and exists (select 1 from json_each(e.tags) where value='chatgpt')
+            and exists (select 1 from json_each(e.tags) where value='message')
+            and exists (select 1 from json_each(e.tags) where value='user')
+            {privacy_sql}
           order by s.priority desc,s.ordinal asc limit ?'''
         rows = c.execute(sql, (iso(), max(1, min(50, int(count))))).fetchall()
         out = []
