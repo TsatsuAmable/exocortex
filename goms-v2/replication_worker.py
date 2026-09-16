@@ -89,7 +89,18 @@ def shasum(path):
 
 
 def _run(cmd, timeout):
-    return subprocess.run(cmd, text=True, capture_output=True, timeout=timeout)
+    try:
+        return subprocess.run(cmd, text=True, capture_output=True, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        def as_text(value):
+            if value is None:
+                return ""
+            if isinstance(value, bytes):
+                return value.decode("utf-8", errors="replace")
+            return str(value)
+        stdout = as_text(getattr(exc, "stdout", None) or getattr(exc, "output", None))
+        stderr = as_text(getattr(exc, "stderr", None))
+        return subprocess.CompletedProcess(cmd, 124, stdout=stdout, stderr=stderr)
 
 
 def _fail(job_path, cp, *, now=None):

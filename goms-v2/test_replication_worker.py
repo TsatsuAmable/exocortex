@@ -2,6 +2,7 @@
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from replication_worker import (
     retry_allowed,
     mark_job_failure,
     queue_has_human_authorization_boundary,
+    _run,
 )
 
 
@@ -29,6 +31,16 @@ class ReplicationWorkerPolicyTests(unittest.TestCase):
     def test_human_authorization_failure_never_auto_retries(self):
         job = {"status": "human_authorization_required"}
         self.assertFalse(retry_allowed(job, now=datetime.now(timezone.utc)))
+
+    def test_timeout_preserves_partial_auth_output_for_classification(self):
+        timeout = __import__('subprocess').TimeoutExpired(
+            cmd=['tailscale','ssh'], timeout=30,
+            output=b'', stderr=b'# Tailscale SSH requires an additional check.\n')
+        with patch('replication_worker.subprocess.run', side_effect=timeout):
+            cp=_run(['tailscale','ssh'],30)
+        self.assertEqual(cp.returncode,124)
+        self.assertEqual(classify_failure((cp.stdout or '')+(cp.stderr or '')),
+                         'human_authorization_required')
 
     def test_queue_pauses_when_any_job_requires_human_authorization(self):
         with tempfile.TemporaryDirectory() as td:
