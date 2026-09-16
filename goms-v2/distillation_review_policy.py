@@ -8,7 +8,7 @@ import unicodedata
 from distillation_temporal_authority import TemporalProfile, _FUNCTIONAL_PREDICATES
 
 LOW_COMPOSITE_CONFIDENCE='LOW_COMPOSITE_CONFIDENCE'
-_BLOCKED_ENTITY_STATUSES={'deleted','removed','superseded','quarantined'}
+_BLOCKED_ENTITY_STATUSES={'deleted','removed','superseded','quarantined','inactive'}
 _HARD_REVIEW_REASONS={
     'SUBJECT_IDENTITY_UNRESOLVED','OBJECT_IDENTITY_UNRESOLVED',
     'SUBJECT_DUPLICATE_EXISTING','OBJECT_DUPLICATE_EXISTING',
@@ -91,6 +91,16 @@ def assess_existing_values(existing_assertions, predicate, proposed_object_id, p
     if not differing or not predicate_is_functional(predicate):
         return ConflictAssessment(0,())
     if temporal_profile.mode == 'OBSERVATION':
+        observed=str(temporal_profile.observed_at or '')
+        overlapping_authority=[]
+        for row in differing:
+            if _safe_distillation_lineage_target(row):
+                continue
+            valid_from=str(_value(row,'valid_from') or '')
+            if not valid_from or not observed or valid_from <= observed:
+                overlapping_authority.append(row)
+        if overlapping_authority:
+            return ConflictAssessment(len(overlapping_authority),('AUTHORITY_CONFLICT',))
         return ConflictAssessment(0,())
     if temporal_profile.mode == 'CURRENT_STATE' and temporal_profile.observed_at:
         if any(not _safe_distillation_lineage_target(row) for row in differing):
@@ -123,6 +133,13 @@ def gate_fingerprint(row):
       'contradiction_count':int(get('contradiction_count') or 0),
       'canonical_kind':get('canonical_kind'),'predicate':get('predicate'),'literal':get('literal'),
       'confidence':fnum(get('confidence')),'rationale':get('rationale'),
+      'evidence_ids':sorted(_reasons(get('evidence_ids'))),
+      'extractor_confidence':fnum(get('extractor_confidence')),
+      'validator_confidence':fnum(get('validator_confidence')),
+      'validator_verdict':get('verdict'),'validated_kind':get('validated_kind'),'durability':get('durability'),
+      'temporal_mode':get('temporal_mode'),'temporal_observed_at':get('temporal_observed_at'),
+      'temporal_auto_eligible':bool(get('temporal_auto_eligible')),
+      'temporal_reasons':sorted(_reasons(get('temporal_reasons'))),
       'subject_mode':get('subject_mode'),'subject_id':get('subject_id'),'subject_type':get('subject_type'),
       'subject_title':get('subject_title'),'object_mode':get('object_mode'),'object_id':get('object_id'),
       'object_type':get('object_type'),'object_title':get('object_title'),'status':get('status'),

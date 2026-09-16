@@ -34,8 +34,11 @@ def proposal(c,cid='c1',subject_title='Nemosyne',subject_type='project',object_t
 
 def gate(c,cid='c1',subject_resolution='project_nemosyne',object_resolution='idea_roadmap',reasons=None,score=.85):
     reasons=reasons or ['SUBJECT_DUPLICATE_EXISTING','OBJECT_DUPLICATE_EXISTING','LOW_COMPOSITE_CONFIDENCE']
-    c.execute("insert into distillation_promotion_gate values(?,?,?,?,?,?,?,?)",
-              (cid,'REVIEW',score,json.dumps(reasons),subject_resolution,object_resolution,0,'t1'))
+    rr.ensure_schema(c)
+    c.execute("""insert into distillation_promotion_gate
+      (candidate_id,decision,score,reasons,subject_resolution,object_resolution,contradiction_count,checked_at,gate_fingerprint)
+      values(?,?,?,?,?,?,?,?,?)""",
+      (cid,'REVIEW',score,json.dumps(reasons),subject_resolution,object_resolution,0,'t1','fp:'+cid))
 
 
 class ReviewReconcilerTests(unittest.TestCase):
@@ -107,6 +110,16 @@ class ReviewReconcilerTests(unittest.TestCase):
             row=c.execute("select subject_mode,subject_id from distillation_reconciliation_proposals where candidate_id='c1'").fetchone()
             self.assertEqual(tuple(row),('new',None))
 
+    def test_dirty_review_waits_for_regate_before_adjudication(self):
+        with closing(make_db()) as c:
+            c.execute("insert into distillation_reconciliation_proposals values('dirty-review','preference','existing','u',null,'User','p','literal',null,null,null,'old',.85,'r','candidate','t')")
+            gate(c,'dirty-review',None,None,['LOW_COMPOSITE_CONFIDENCE'])
+            self.assertEqual(rr.reconcile_review_batch(c,limit=1,observed_at='t2')['processed'],1)
+            c.execute("update distillation_reconciliation_proposals set literal='new' where candidate_id='dirty-review'")
+            self.assertIsNone(c.execute("select gate_fingerprint from distillation_promotion_gate where candidate_id='dirty-review'").fetchone()[0])
+            self.assertEqual(rr.unadjudicated_review_count(c),0)
+            self.assertEqual(rr.reconcile_review_batch(c,limit=1,observed_at='t3')['processed'],0)
+
     def test_changed_authority_payload_reopens_adjudication_even_if_gate_score_and_reason_same(self):
         with closing(make_db()) as c:
             c.execute("insert into distillation_reconciliation_proposals values('cx','preference','existing','u',null,'User','prefers','literal',null,null,null,'short',.85,'r1','candidate','2026-09-01T00:00:00Z')")
@@ -114,7 +127,10 @@ class ReviewReconcilerTests(unittest.TestCase):
             first=rr.reconcile_review_batch(c,limit=10,observed_at='t2')
             c.execute("update distillation_reconciliation_proposals set predicate='avoids',literal='long',rationale='r2' where candidate_id='cx'")
             c.execute("update distillation_promotion_gate set checked_at='t9' where candidate_id='cx'")
-            second=rr.reconcile_review_batch(c,limit=10,observed_at='t3')
+            dirty=rr.reconcile_review_batch(c,limit=10,observed_at='t3')
+            self.assertEqual(dirty['processed'],0)
+            c.execute("update distillation_promotion_gate set checked_at='t9',gate_fingerprint='fp:cx:regated' where candidate_id='cx'")
+            second=rr.reconcile_review_batch(c,limit=10,observed_at='t4')
             self.assertEqual(first['processed'],1)
             self.assertEqual(second['processed'],1)
             audits=c.execute("select before_state from distillation_review_adjudications where candidate_id='cx' order by adjudicated_at").fetchall()
@@ -170,5 +186,21 @@ class ReviewReconcilerTests(unittest.TestCase):
             rr.reconcile_review_batch(c,limit=1,observed_at='t2')
             self.assertEqual(rr.unadjudicated_review_count(c),0)
 
+
+    def test_schema_migration_replaces_old_fingerprint_trigger(self):
+        with closing(make_db()) as c:
+            c.execute("alter table distillation_promotion_gate add column gate_fingerprint text")
+            c.executescript("""create trigger distillation_review_proposal_fingerprint_dirty
+              after update of literal on distillation_reconciliation_proposals begin
+                update distillation_promotion_gate set gate_fingerprint=null where candidate_id=new.candidate_id;
+              end;""")
+            c.execute("insert into distillation_reconciliation_proposals values('legacy','preference','existing','u',null,'User','p','literal',null,null,null,'old',.9,'r','candidate','t')")
+            c.execute("insert into distillation_promotion_gate values('legacy','AUTO_READY',.9,'[]',null,null,0,'t','fp')")
+            c.execute("insert into distillation_graphshape_reviews values('legacy','ACCEPT')")
+            rr.ensure_schema(c)
+            sql=c.execute("select sql from sqlite_master where type='trigger' and name='distillation_review_proposal_fingerprint_dirty'").fetchone()[0].lower()
+            self.assertIn('delete from distillation_graphshape_reviews',sql)
+            c.execute("update distillation_reconciliation_proposals set literal='new' where candidate_id='legacy'")
+            self.assertIsNone(c.execute("select 1 from distillation_graphshape_reviews where candidate_id='legacy'").fetchone())
 
 if __name__=='__main__': unittest.main(verbosity=2)

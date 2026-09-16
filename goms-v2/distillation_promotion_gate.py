@@ -148,6 +148,8 @@ with closing(sqlite3.connect(DB)) as c, c:
             'decision':decision,'score':score,'reasons':json.dumps(reasons),
             'subject_resolution':sres,'object_resolution':ores,
             'contradiction_count':contradiction_count,
+            'temporal_mode':temporal.mode,'temporal_observed_at':temporal.observed_at,
+            'temporal_auto_eligible':temporal.auto_eligible,'temporal_reasons':list(temporal.reasons),
         })
         fingerprint=gate_fingerprint(gate_row)
         checked=now()

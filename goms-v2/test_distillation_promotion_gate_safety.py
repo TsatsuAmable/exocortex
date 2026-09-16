@@ -57,7 +57,7 @@ class PromotionGateSafetyTests(unittest.TestCase):
     def test_inactive_existing_entity_cannot_be_auto_ready(self):
         self.seed_candidate(subject_mode='existing',subject_id='project_dead',subject_title='Old Project')
         with closing(sqlite3.connect(self.db)) as c, c:
-            c.execute("insert into entities(id,type,title,status,tags,metadata,created_at,updated_at) values('project_dead','project','Old Project','deleted','[]','{}','t','t')")
+            c.execute("insert into entities(id,type,title,status,tags,metadata,created_at,updated_at) values('project_dead','project','Old Project','inactive','[]','{}','t','t')")
         self.run_script('distillation_promotion_gate.py')
         with closing(sqlite3.connect(self.db)) as c:
             row=c.execute("select decision,reasons from distillation_promotion_gate where candidate_id='c1'").fetchone()
@@ -79,5 +79,65 @@ class PromotionGateSafetyTests(unittest.TestCase):
             assertions=c.execute("select count(*) from semantic_assertions where source_ref='distillation://c1'").fetchone()[0]
         self.assertEqual(status,'candidate')
         self.assertEqual(assertions,0)
+
+    def test_promotion_rechecks_existing_entity_status_after_gate(self):
+        self.seed_candidate(subject_mode='existing',subject_id='project_live',subject_title='Live Project')
+        with closing(sqlite3.connect(self.db)) as c, c:
+            c.execute("insert into entities(id,type,title,status,tags,metadata,created_at,updated_at) values('project_live','project','Live Project','active','[]','{}','t','t')")
+        self.run_script('distillation_promotion_gate.py')
+        with closing(sqlite3.connect(self.db)) as c, c:
+            gate=c.execute("select decision,gate_fingerprint from distillation_promotion_gate where candidate_id='c1'").fetchone()
+            self.assertEqual(gate[0],'AUTO_READY'); self.assertTrue(gate[1])
+            c.execute("insert into distillation_graphshape_reviews(candidate_id,verdict,rationale,reviewer_model,reviewed_at) values('c1','ACCEPT','ok','reviewer','t')")
+            c.execute("update entities set status='inactive' where id='project_live'")
+        self.run_script('distillation_promote.py')
+        with closing(sqlite3.connect(self.db)) as c:
+            self.assertEqual(c.execute("select status from distillation_reconciliation_proposals where candidate_id='c1'").fetchone()[0],'candidate')
+            self.assertEqual(c.execute("select count(*) from semantic_assertions where source_ref='distillation://c1'").fetchone()[0],0)
+            self.assertIsNone(c.execute("select gate_fingerprint from distillation_promotion_gate where candidate_id='c1'").fetchone()[0])
+            self.assertIsNone(c.execute("select 1 from distillation_graphshape_reviews where candidate_id='c1'").fetchone())
+
+    def test_promotion_rechecks_human_authority_after_gate(self):
+        self.seed_candidate(subject_mode='existing',subject_id='project_live',subject_title='Live Project',literal='model-set')
+        with closing(sqlite3.connect(self.db)) as c, c:
+            c.execute("insert into entities(id,type,title,status,tags,metadata,created_at,updated_at) values('project_live','project','Live Project','active','[]','{}','t','t')")
+        self.run_script('distillation_promotion_gate.py')
+        with closing(sqlite3.connect(self.db)) as c, c:
+            gate=c.execute("select decision,gate_fingerprint from distillation_promotion_gate where candidate_id='c1'").fetchone()
+            self.assertEqual(gate[0],'AUTO_READY'); self.assertTrue(gate[1])
+            c.execute("insert into distillation_graphshape_reviews(candidate_id,verdict,rationale,reviewer_model,reviewed_at) values('c1','ACCEPT','ok','reviewer','t')")
+            c.execute("insert into semantic_assertions(id,subject_id,predicate,literal_value,epistemic_status,valid_from,valid_to,source_ref,created_at,updated_at) values('human_state','project_live','status','human-set','explicit','2026-09-15T00:00:00+00:00',null,'human://decision','t','t')")
+        self.run_script('distillation_promote.py')
+        with closing(sqlite3.connect(self.db)) as c:
+            self.assertEqual(c.execute("select status from distillation_reconciliation_proposals where candidate_id='c1'").fetchone()[0],'candidate')
+            self.assertEqual(c.execute("select count(*) from semantic_assertions where source_ref='distillation://c1'").fetchone()[0],0)
+            self.assertIsNone(c.execute("select gate_fingerprint from distillation_promotion_gate where candidate_id='c1'").fetchone()[0])
+            self.assertIsNone(c.execute("select 1 from distillation_graphshape_reviews where candidate_id='c1'").fetchone())
+
+    def test_promotion_rejects_temporal_profile_changed_after_gate(self):
+        self.seed_candidate(subject_mode='existing',subject_id='project_live',subject_title='Live Project')
+        with closing(sqlite3.connect(self.db)) as c, c:
+            c.execute("insert into entities(id,type,title,status,tags,metadata,created_at,updated_at) values('project_live','project','Live Project','active','[]','{}','t','t')")
+        self.run_script('distillation_promotion_gate.py')
+        with closing(sqlite3.connect(self.db)) as c, c:
+            c.execute("insert into distillation_graphshape_reviews(candidate_id,verdict,rationale,reviewer_model,reviewed_at) values('c1','ACCEPT','ok','reviewer','t')")
+            c.execute("update distillation_temporal_authority set observed_at='2026-09-17T00:00:00+00:00' where candidate_id='c1'")
+        self.run_script('distillation_promote.py')
+        with closing(sqlite3.connect(self.db)) as c:
+            self.assertEqual(c.execute("select status from distillation_reconciliation_proposals where candidate_id='c1'").fetchone()[0],'candidate')
+            self.assertIsNone(c.execute("select gate_fingerprint from distillation_promotion_gate where candidate_id='c1'").fetchone()[0])
+
+    def test_promotion_rejects_validation_changed_after_gate(self):
+        self.seed_candidate(subject_mode='existing',subject_id='project_live',subject_title='Live Project')
+        with closing(sqlite3.connect(self.db)) as c, c:
+            c.execute("insert into entities(id,type,title,status,tags,metadata,created_at,updated_at) values('project_live','project','Live Project','active','[]','{}','t','t')")
+        self.run_script('distillation_promotion_gate.py')
+        with closing(sqlite3.connect(self.db)) as c, c:
+            c.execute("insert into distillation_graphshape_reviews(candidate_id,verdict,rationale,reviewer_model,reviewed_at) values('c1','ACCEPT','ok','reviewer','t')")
+            c.execute("update distillation_validations set verdict='reject',confidence=.1 where candidate_id='c1'")
+        self.run_script('distillation_promote.py')
+        with closing(sqlite3.connect(self.db)) as c:
+            self.assertEqual(c.execute("select status from distillation_reconciliation_proposals where candidate_id='c1'").fetchone()[0],'candidate')
+            self.assertIsNone(c.execute("select gate_fingerprint from distillation_promotion_gate where candidate_id='c1'").fetchone()[0])
 
 if __name__=='__main__': unittest.main(verbosity=2)

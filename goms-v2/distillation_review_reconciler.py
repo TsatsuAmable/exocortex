@@ -39,7 +39,8 @@ def ensure_schema(connection):
     if 'gate_fingerprint' not in _table_columns(connection,'distillation_promotion_gate'):
         connection.execute('alter table distillation_promotion_gate add column gate_fingerprint text')
     connection.executescript('''
-      create trigger if not exists distillation_review_proposal_fingerprint_dirty
+      drop trigger if exists distillation_review_proposal_fingerprint_dirty;
+      create trigger distillation_review_proposal_fingerprint_dirty
       after update of canonical_kind,subject_mode,subject_id,subject_type,subject_title,
                       predicate,object_mode,object_id,object_type,object_title,literal,confidence,rationale
       on distillation_reconciliation_proposals
@@ -112,7 +113,7 @@ def _review_select_sql(select_one=False):
       left join distillation_review_adjudications a
         on a.candidate_id=p.candidate_id and a.gate_fingerprint=g.gate_fingerprint
       where p.status='candidate' and g.decision='REVIEW'
-        and (g.gate_fingerprint is null or a.candidate_id is null)
+        and g.gate_fingerprint is not null and a.candidate_id is null
       order by g.checked_at,p.candidate_id'''
 
 
@@ -123,11 +124,9 @@ def unadjudicated_review_count(connection):
 
 
 def _persisted_fingerprint(connection,row):
-    current=row['gate_fingerprint'] if 'gate_fingerprint' in row.keys() else None
-    fingerprint=current or gate_fingerprint(row)
-    if not current:
-        connection.execute('update distillation_promotion_gate set gate_fingerprint=? where candidate_id=?',
-                           (fingerprint,row['candidate_id']))
+    fingerprint=row['gate_fingerprint'] if 'gate_fingerprint' in row.keys() else None
+    if not fingerprint:
+        raise ValueError('review gate requires re-gating before adjudication')
     return fingerprint
 
 

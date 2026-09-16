@@ -61,6 +61,22 @@ class ReviewPolicyTests(unittest.TestCase):
         self.assertTrue(requires_hard_review(('OBJECT_DUPLICATE_EXISTING',)))
         self.assertTrue(requires_hard_review(('SUBJECT_DUPLICATE_AMBIGUOUS',)))
 
+    def test_overlapping_human_authority_blocks_conflicting_observation(self):
+        existing=[{'object_id':None,'literal_value':'human-set','valid_from':'2026-09-15T00:00:00+00:00',
+                   'epistemic_status':'explicit','source_ref':'human://decision'}]
+        profile=TemporalProfile('OBSERVATION','2026-09-16T00:00:00+00:00',True,())
+        result=assess_existing_values(existing,'status',None,'observed-other',profile)
+        self.assertEqual(result.contradiction_count,1)
+        self.assertEqual(result.reasons,('AUTHORITY_CONFLICT',))
+
+    def test_later_human_state_does_not_rewrite_earlier_historical_observation(self):
+        existing=[{'object_id':None,'literal_value':'human-later','valid_from':'2026-09-17T00:00:00+00:00',
+                   'epistemic_status':'explicit','source_ref':'human://decision'}]
+        profile=TemporalProfile('OBSERVATION','2026-09-16T00:00:00+00:00',True,())
+        result=assess_existing_values(existing,'status',None,'observed-earlier',profile)
+        self.assertEqual(result.contradiction_count,0)
+        self.assertEqual(result.reasons,())
+
     def test_stale_functional_state_requires_review(self):
         existing=[extracted('passed',valid_from='2026-09-16T00:00:00+00:00')]
         profile=TemporalProfile('CURRENT_STATE','2026-09-15T00:00:00+00:00',True,())
