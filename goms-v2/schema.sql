@@ -488,7 +488,7 @@ CREATE TABLE IF NOT EXISTS distillation_promotion_gate(
       candidate_id TEXT PRIMARY KEY, decision TEXT NOT NULL, score REAL NOT NULL,
       reasons TEXT NOT NULL DEFAULT '[]', subject_resolution TEXT,
       object_resolution TEXT, contradiction_count INTEGER NOT NULL DEFAULT 0,
-      checked_at TEXT NOT NULL);
+      checked_at TEXT NOT NULL, gate_fingerprint TEXT);
 CREATE TABLE IF NOT EXISTS distillation_review_adjudications(
       candidate_id TEXT NOT NULL,gate_fingerprint TEXT NOT NULL,gate_checked_at TEXT NOT NULL,
       action TEXT NOT NULL,reason TEXT NOT NULL,before_state TEXT NOT NULL DEFAULT '{}',
@@ -505,6 +505,13 @@ CREATE TABLE IF NOT EXISTS distillation_reconciliation_proposals(
       predicate TEXT,object_mode TEXT,object_id TEXT,object_type TEXT,
       object_title TEXT,literal TEXT,confidence REAL,rationale TEXT,
       status TEXT DEFAULT 'candidate',created_at TEXT);
+CREATE TRIGGER IF NOT EXISTS distillation_review_proposal_fingerprint_dirty
+AFTER UPDATE OF canonical_kind,subject_mode,subject_id,subject_type,subject_title,
+                predicate,object_mode,object_id,object_type,object_title,literal,confidence,rationale
+ON distillation_reconciliation_proposals
+BEGIN
+  UPDATE distillation_promotion_gate SET gate_fingerprint=NULL WHERE candidate_id=NEW.candidate_id;
+END;
 CREATE TABLE IF NOT EXISTS distillation_resolutions(
       candidate_id TEXT PRIMARY KEY,subject_entity_id TEXT,object_entity_id TEXT,
       create_subject INTEGER NOT NULL DEFAULT 0,create_object INTEGER NOT NULL DEFAULT 0,

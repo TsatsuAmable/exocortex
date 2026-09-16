@@ -54,22 +54,33 @@ class GraphShapePolicyTests(unittest.TestCase):
 
 class SemanticDaemonTests(unittest.TestCase):
     def test_stage_plan_rotates_fairly_across_active_backlogs(self):
-        counts={'unvalidated':3,'unreconciled':2,'gate_missing':2,'review_actionable':4,'shape_missing':1,'promotable':1}
+        counts={'unvalidated':3,'unreconciled':2,'gate_missing':2,'review_actionable':4,'shape_missing':1,'promotable':1,'surface_dirty':1}
         self.assertEqual([semantic_daemon.choose_stage(counts,cursor=i) for i in range(6)],
                          ['validate','reconcile','gate','adjudicate','shape','promote'])
-        self.assertEqual(semantic_daemon.choose_stage({'unvalidated':3,'unreconciled':2,'gate_missing':0,'review_actionable':0,'shape_missing':0,'promotable':0},cursor=2),'validate')
-        self.assertEqual(semantic_daemon.choose_stage({'unvalidated':3,'unreconciled':2,'gate_missing':0,'review_actionable':0,'shape_missing':0,'promotable':0},cursor=1),'reconcile')
-        self.assertIsNone(semantic_daemon.choose_stage({'unvalidated':0,'unreconciled':0,'gate_missing':0,'review_actionable':0,'shape_missing':0,'promotable':0},cursor=5))
+        self.assertEqual(semantic_daemon.choose_stage({'unvalidated':3,'unreconciled':2,'gate_missing':0,'review_actionable':0,'shape_missing':0,'promotable':0,'surface_dirty':0},cursor=2),'validate')
+        self.assertEqual(semantic_daemon.choose_stage({'unvalidated':3,'unreconciled':2,'gate_missing':0,'review_actionable':0,'shape_missing':0,'promotable':0,'surface_dirty':0},cursor=1),'reconcile')
+        self.assertIsNone(semantic_daemon.choose_stage({'unvalidated':0,'unreconciled':0,'gate_missing':0,'review_actionable':0,'shape_missing':0,'promotable':0,'surface_dirty':0},cursor=6))
 
 
     def test_actionable_review_gets_fair_turn(self):
-        counts={"unvalidated":0,"unreconciled":0,"gate_missing":0,"review_actionable":9,"shape_missing":3,"promotable":2}
+        counts={"unvalidated":0,"unreconciled":0,"gate_missing":0,"review_actionable":9,"shape_missing":3,"promotable":2,"surface_dirty":0}
         self.assertEqual(semantic_daemon.choose_stage(counts,cursor=3),"adjudicate")
 
+    def test_surface_refresh_is_independent_of_actionable_adjudication(self):
+        counts={"unvalidated":0,"unreconciled":0,"gate_missing":0,"review_actionable":0,
+                "shape_missing":0,"promotable":0,"surface_dirty":1}
+        self.assertEqual(semantic_daemon.choose_stage(counts,cursor=0),"surface")
+        self.assertEqual(semantic_daemon.SCRIPTS['surface'],'distillation_review_surface.py')
+
+
+    def test_dirty_review_surface_gets_independent_turn(self):
+        counts={"unvalidated":0,"unreconciled":0,"gate_missing":0,"review_actionable":0,"shape_missing":0,"promotable":0,"surface_dirty":1}
+        self.assertEqual(semantic_daemon.choose_stage(counts,cursor=0),"surface")
+
     def test_stage_plan_can_pause_promotion_without_pausing_upstream(self):
-        counts={"unvalidated":0,"unreconciled":0,"gate_missing":0,"review_actionable":0,"shape_missing":0,"promotable":7}
-        self.assertIsNone(semantic_daemon.choose_stage(counts,cursor=5,promotion_enabled=False))
+        counts={"unvalidated":0,"unreconciled":0,"gate_missing":0,"review_actionable":0,"shape_missing":0,"promotable":7,"surface_dirty":0}
+        self.assertIsNone(semantic_daemon.choose_stage(counts,cursor=6,promotion_enabled=False))
         counts["shape_missing"]=3
-        self.assertEqual(semantic_daemon.choose_stage(counts,cursor=5,promotion_enabled=False),"shape")
+        self.assertEqual(semantic_daemon.choose_stage(counts,cursor=6,promotion_enabled=False),"shape")
 
 if __name__=='__main__': unittest.main(verbosity=2)
