@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>org.aineko.goms-distillation-workers</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/Users/tsatsuamable/Library/Application Support/Aineko/GOMS/distillation_worker_daemon.py</string>
+    <string>--batch-size</string><string>100</string>
+    <string>--active-sleep</string><string>1</string>
+    <string>--idle-sleep</string><string>15</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/tsatsuamable/Library/Application Support/Aineko/GOMS</string>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string></dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>5</integer>
+  <key>StandardOutPath</key><string>/Users/tsatsuamable/Library/Logs/aineko-goms-distillation-workers.log</string>
+  <key>StandardErrorPath</key><string>/Users/tsatsuamable/Library/Logs/aineko-goms-distillation-workers.err</string>
+</dict>
+</plist>

@@ -110,6 +110,7 @@ def ollama_adapter(model, prompt):
         'prompt': prompt,
         'stream': False,
         'format': 'json',
+        'think': False,
         'options': {'temperature': 0, 'num_ctx': 8192, 'num_predict': 1400},
     }).encode()
     req = urllib.request.Request('http://127.0.0.1:11434/api/generate', data=payload,
@@ -204,8 +205,8 @@ class QueueHTTPClient:
 
 def default_lane_specs():
     chain = (
-        ProviderSpec('glm-cloud-primary','ollama','glm-5.3:cloud',True),
-        ProviderSpec('deepseek-cloud-fallback','ollama','deepseek-v4-flash:cloud',True),
+        ProviderSpec('deepseek-cloud-primary','ollama','deepseek-v4-flash:cloud',True),
+        ProviderSpec('gpt-oss-cloud-fallback','ollama','gpt-oss:120b-cloud',True),
         ProviderSpec('gsvaineko-local','ollama','gsvaineko-core:v1',False),
         ProviderSpec('bonsai-local','ollama','bonsai27b:q1',False),
         ProviderSpec('qwen-last-resort','ollama','qwen3.5:4b',False),

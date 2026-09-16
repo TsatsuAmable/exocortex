@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 from contextlib import closing
 import http.client
+import io
 import json
 import sqlite3
 import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import distillation_queue_server as queue_server
@@ -103,8 +105,10 @@ class ProviderBrokerTests(unittest.TestCase):
         lanes=worker_pool.default_lane_specs()
         self.assertEqual(len(lanes),3)
         for lane in lanes:
-            self.assertEqual(lane.providers[0].model,'glm-5.3:cloud')
+            self.assertEqual(lane.providers[0].model,'deepseek-v4-flash:cloud')
             self.assertTrue(lane.providers[0].remote)
+            self.assertEqual(lane.providers[1].model,'gpt-oss:120b-cloud')
+            self.assertTrue(lane.providers[1].remote)
             self.assertEqual(lane.providers[-1].model,'qwen3.5:4b')
             self.assertFalse(lane.providers[-1].remote)
 
@@ -174,6 +178,18 @@ class WorkerRuntimeTests(unittest.TestCase):
         self.assertIn('EVIDENCE_ID: evidence-123',prompt)
         self.assertIn('SOURCE: chatgpt://conversation/x',prompt)
         self.assertIn('Keep durable state.',prompt)
+
+    def test_ollama_adapter_disables_thinking_for_structured_extraction(self):
+        seen={}
+        class Response(io.BytesIO):
+            def __enter__(self): return self
+            def __exit__(self,*args): self.close(); return False
+        def opener(req,timeout):
+            seen.update(json.loads(req.data.decode()))
+            return Response(b'{"response":"{}"}')
+        with mock.patch.object(worker_pool.urllib.request,'urlopen',opener):
+            worker_pool.ollama_adapter('deepseek-v4-flash:cloud','prompt')
+        self.assertIs(seen['think'],False)
 
     def test_invoke_provider_dispatches_by_adapter(self):
         seen=[]
