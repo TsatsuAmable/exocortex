@@ -155,6 +155,16 @@ def queue_summary(outbox):
     return counts
 
 
+def queue_has_human_authorization_boundary(outbox):
+    for path in Path(outbox).glob("*.json"):
+        try:
+            if json.loads(path.read_text()).get("status") == "human_authorization_required":
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def publish_queue_resource(db_path, counts, *, now=None):
     current = now or utcnow()
     pending = sum(counts.values())
@@ -239,16 +249,24 @@ def main():
         return
 
     outcomes = {"replicated": 0, "failed": 0, "skipped": 0}
-    for job_path in sorted(args.outbox.glob("*.json")):
-        try:
-            result = process_job(job_path, args.done)
-            outcomes[result["status"]] = outcomes.get(result["status"], 0) + 1
-        except Exception as exc:
-            mark_job_failure(job_path, "transient", str(exc))
-            outcomes["failed"] += 1
+    paused = queue_has_human_authorization_boundary(args.outbox)
+    if not paused:
+        for job_path in sorted(args.outbox.glob("*.json")):
+            try:
+                result = process_job(job_path, args.done)
+                outcomes[result["status"]] = outcomes.get(result["status"], 0) + 1
+                if result.get("job", {}).get("status") == "human_authorization_required":
+                    paused = True
+                    break
+            except Exception as exc:
+                job = mark_job_failure(job_path, "transient", str(exc))
+                outcomes["failed"] += 1
+                if job.get("status") == "human_authorization_required":
+                    paused = True
+                    break
     counts = queue_summary(args.outbox)
     rid = publish_queue_resource(args.db, counts)
-    print(json.dumps({"outcomes": outcomes, "queue": counts, "resource_id": rid}, sort_keys=True))
+    print(json.dumps({"outcomes": outcomes, "queue": counts, "resource_id": rid, "paused_for_human_authorization": paused}, sort_keys=True))
 
 
 if __name__ == "__main__":

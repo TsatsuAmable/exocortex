@@ -10,6 +10,7 @@ from replication_worker import (
     redact_auth_output,
     retry_allowed,
     mark_job_failure,
+    queue_has_human_authorization_boundary,
 )
 
 
@@ -28,6 +29,15 @@ class ReplicationWorkerPolicyTests(unittest.TestCase):
     def test_human_authorization_failure_never_auto_retries(self):
         job = {"status": "human_authorization_required"}
         self.assertFalse(retry_allowed(job, now=datetime.now(timezone.utc)))
+
+    def test_queue_pauses_when_any_job_requires_human_authorization(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            (root/'a.json').write_text(json.dumps({'status':'pending'}))
+            (root/'b.json').write_text(json.dumps({'status':'human_authorization_required'}))
+            self.assertTrue(queue_has_human_authorization_boundary(root))
+            (root/'b.json').write_text(json.dumps({'status':'pending'}))
+            self.assertFalse(queue_has_human_authorization_boundary(root))
 
     def test_transient_failure_uses_backoff(self):
         now = datetime(2026, 9, 13, 18, 0, tzinfo=timezone.utc)

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>org.aineko.chatgpt-replication</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>/Users/tsatsuamable/Library/Application Support/Aineko/GOMS/replication_worker.py</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/tsatsuamable/Library/Application Support/Aineko/GOMS</string>
+  <key>RunAtLoad</key><true/>
+  <key>StartInterval</key><integer>60</integer>
+  <key>StandardOutPath</key><string>/Users/tsatsuamable/Library/Logs/aineko-chatgpt-replication.log</string>
+  <key>StandardErrorPath</key><string>/Users/tsatsuamable/Library/Logs/aineko-chatgpt-replication.err</string>
+</dict>
+</plist>
