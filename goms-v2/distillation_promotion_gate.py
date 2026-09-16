@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from distillation_temporal_authority import authority_profile, record_temporal_authority, temporal_gate_override
+from distillation_review_policy import assess_existing_values, review_reason_for_score
 
 ROOT=Path.home()/"Library/Application Support/Aineko/GOMS"
 DB=ROOT/"goms.sqlite3"
@@ -89,19 +90,18 @@ with closing(sqlite3.connect(DB)) as c, c:
         subject_id=sres or p.get("subject_id")
         if subject_id:
             existing_assertions=[dict(r) for r in c.execute(
-              """select predicate,object_id,literal_value from semantic_assertions
-                 where subject_id=? and predicate=?""",
+              """select predicate,object_id,literal_value,valid_from from semantic_assertions
+                 where subject_id=? and predicate=? and valid_to is null
+                   and epistemic_status='validated_extracted'""",
               (subject_id,p.get("predicate"))).fetchall()]
             proposed_obj=ores or p.get("object_id")
             proposed_lit=p.get("literal")
-            for a in existing_assertions:
-                if proposed_obj and a.get("object_id") and proposed_obj!=a.get("object_id"):
-                    contradiction_count+=1
-                elif proposed_lit and a.get("literal_value") and norm(proposed_lit)!=norm(a.get("literal_value")):
-                    contradiction_count+=1
+            conflict=assess_existing_values(existing_assertions,p.get("predicate"),
+                                             proposed_obj,proposed_lit,temporal)
+            contradiction_count=conflict.contradiction_count
+            reasons.extend(conflict.reasons)
 
         if contradiction_count:
-            reasons.append("POTENTIAL_CONTRADICTION")
             score-=min(0.35,0.15*contradiction_count)
         if p.get("subject_mode")=="new" and p.get("subject_type") in GENERIC_TYPES and len(stitle.split())>9:
             reasons.append("SENTENCE_SHAPED_SUBJECT"); score-=0.15
@@ -109,9 +109,13 @@ with closing(sqlite3.connect(DB)) as c, c:
             reasons.append("SENTENCE_SHAPED_OBJECT"); score-=0.15
 
         score=max(0.0,min(1.0,score))
+        score_reason=review_reason_for_score(score)
+        if score_reason:
+            reasons.append(score_reason)
         hard_reject={"NO_PROVENANCE","VALIDATOR_REJECTED","BAD_SUBJECT_ID","BAD_OBJECT_ID"}
         hard_review={"SUBJECT_IDENTITY_UNRESOLVED","OBJECT_IDENTITY_UNRESOLVED",
-                     "POTENTIAL_CONTRADICTION","SENTENCE_SHAPED_SUBJECT","SENTENCE_SHAPED_OBJECT"}
+                     "POTENTIAL_CONTRADICTION","STALE_STATE_UPDATE",
+                     "SENTENCE_SHAPED_SUBJECT","SENTENCE_SHAPED_OBJECT"}
         temporal_override=temporal_gate_override(temporal)
         if any(x in hard_reject for x in reasons) or score<0.55:
             decision="REJECT"
