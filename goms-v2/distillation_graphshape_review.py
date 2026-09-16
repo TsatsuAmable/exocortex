@@ -6,6 +6,7 @@ from pathlib import Path
 
 from distillation_model_client import generate_structured, REMOTE_MODEL_CHAIN, LOCAL_MODEL_CHAIN, prompt_allows_remote
 from distillation_graphshape_policy import select_pending_shape_reviews
+from distillation_review_reconciler import ensure_schema as ensure_review_schema
 
 ROOT=Path.home()/"Library/Application Support/Aineko/GOMS"
 DB=ROOT/"goms.sqlite3"
@@ -46,7 +47,8 @@ with closing(sqlite3.connect(DB)) as c, c:
       candidate_id TEXT PRIMARY KEY, verdict TEXT NOT NULL, rationale TEXT,
       subject_title TEXT,subject_type TEXT,predicate TEXT,
       object_title TEXT,object_type TEXT,literal TEXT,
-      reviewer_model TEXT,reviewed_at TEXT);""")
+      reviewer_model TEXT,reviewed_at TEXT,gate_fingerprint TEXT);""")
+    ensure_review_schema(c)
     rows=select_pending_shape_reviews(c,limit=12)
     payload=[]
     for r in rows:
@@ -92,12 +94,12 @@ with closing(sqlite3.connect(DB)) as c, c:
               values(?,?,?,?,?,?,?,?,?,?,?)""", vals)
             c.execute("""insert or replace into distillation_graphshape_reviews(
               candidate_id,verdict,rationale,subject_title,subject_type,predicate,
-              object_title,object_type,literal,reviewer_model,reviewed_at)
-              values(?,?,?,?,?,?,?,?,?,?,?)""",
+              object_title,object_type,literal,reviewer_model,reviewed_at,gate_fingerprint)
+              values(?,?,?,?,?,?,?,?,?,?,?,?)""",
               (r["candidate_id"],verdict,str(x.get("rationale") or ""),
                x.get("subject_title"),x.get("subject_type"),x.get("predicate"),
                x.get("object_title"),x.get("object_type"),x.get("literal"),
-               actual_model,now()))
+               actual_model,now(),r["gate_fingerprint"]))
         overall[actual_model]=counts
         c.commit()
     print(json.dumps({"reviewed":len(rows),"by_model":overall},indent=2))

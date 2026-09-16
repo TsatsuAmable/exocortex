@@ -5,7 +5,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from distillation_temporal_authority import TemporalProfile, assertion_fields, authority_profile, reconcile_lineages
-from distillation_review_policy import assess_existing_values, entity_is_rebindable, gate_fingerprint
+from distillation_review_policy import (
+    assess_existing_values, authority_assertions, current_title_matches,
+    entity_is_rebindable, gate_fingerprint,
+)
 from distillation_review_reconciler import ensure_schema as ensure_review_schema
 
 ROOT=Path.home()/"Library/Application Support/Aineko/GOMS"
@@ -33,7 +36,7 @@ with closing(sqlite3.connect(DB)) as c, c:
       join distillation_candidates d on d.id=p.candidate_id
       join distillation_validations v on v.candidate_id=p.candidate_id
       join distillation_promotion_gate g on g.candidate_id=p.candidate_id
-      join distillation_graphshape_reviews s on s.candidate_id=p.candidate_id
+      join distillation_graphshape_reviews s on s.candidate_id=p.candidate_id and s.gate_fingerprint=g.gate_fingerprint
       join distillation_temporal_authority t on t.candidate_id=p.candidate_id
       where p.status='candidate' and g.decision='AUTO_READY' and g.gate_fingerprint is not null and s.verdict='ACCEPT' and t.auto_eligible=1
       order by g.score desc""").fetchall()]
@@ -80,6 +83,7 @@ with closing(sqlite3.connect(DB)) as c, c:
         }
         ts=now()
 
+        create_subject=False; create_object=False
         if p["subject_mode"]=="existing":
             entity=c.execute("select id,type,title,status from entities where id=?",(p["subject_id"],)).fetchone()
             entity=dict(entity) if entity else None
@@ -88,13 +92,15 @@ with closing(sqlite3.connect(DB)) as c, c:
                 continue
             subject_id=p["subject_id"]
         else:
+            hits=current_title_matches(c,p["subject_title"])
+            if hits:
+                invalidate(p['candidate_id'],'SUBJECT_DUPLICATE_NOW')
+                continue
             subject_id=eid(p["subject_type"] or "idea",p["subject_title"])
-            c.execute("""insert or ignore into entities
-              (id,type,title,summary,status,tags,metadata,created_at,updated_at)
-              values(?,?,?,?,?,'[]',?,?,?)""",
-              (subject_id,p["subject_type"] or "idea",p["subject_title"],
-               "Promoted from validated distillation.","active",
-               json.dumps({"provenance":provenance},sort_keys=True),ts,ts))
+            if c.execute("select 1 from entities where id=?",(subject_id,)).fetchone():
+                invalidate(p['candidate_id'],'SUBJECT_ID_COLLISION')
+                continue
+            create_subject=True
 
         object_id=None; literal=p["literal"]
         if p["object_mode"]=="existing":
@@ -105,23 +111,36 @@ with closing(sqlite3.connect(DB)) as c, c:
                 continue
             object_id=p["object_id"]
         elif p["object_mode"]=="new":
+            hits=current_title_matches(c,p["object_title"])
+            if hits:
+                invalidate(p['candidate_id'],'OBJECT_DUPLICATE_NOW')
+                continue
             object_id=eid(p["object_type"] or "idea",p["object_title"])
-            c.execute("""insert or ignore into entities
+            if c.execute("select 1 from entities where id=?",(object_id,)).fetchone():
+                invalidate(p['candidate_id'],'OBJECT_ID_COLLISION')
+                continue
+            create_object=True
+
+        relevant=authority_assertions(c,subject_id,p['predicate'],temporal)
+        conflict=assess_existing_values(relevant,p['predicate'],object_id,literal,temporal)
+        if conflict.contradiction_count:
+            invalidate(p['candidate_id'],conflict.reasons[0] if conflict.reasons else 'AUTHORITY_CONFLICT')
+            continue
+
+        if create_subject:
+            c.execute("""insert into entities
+              (id,type,title,summary,status,tags,metadata,created_at,updated_at)
+              values(?,?,?,?,?,'[]',?,?,?)""",
+              (subject_id,p["subject_type"] or "idea",p["subject_title"],
+               "Promoted from validated distillation.","active",
+               json.dumps({"provenance":provenance},sort_keys=True),ts,ts))
+        if create_object:
+            c.execute("""insert into entities
               (id,type,title,summary,status,tags,metadata,created_at,updated_at)
               values(?,?,?,?,?,'[]',?,?,?)""",
               (object_id,p["object_type"] or "idea",p["object_title"],
                "Promoted from validated distillation.","active",
                json.dumps({"provenance":provenance},sort_keys=True),ts,ts))
-
-        if temporal.mode in ('CURRENT_STATE','COMMITMENT'):
-            active=[dict(r) for r in c.execute(
-              """select object_id,literal_value,valid_from,epistemic_status,source_ref
-                 from semantic_assertions where subject_id=? and predicate=? and valid_to is null""",
-              (subject_id,p['predicate'])).fetchall()]
-            conflict=assess_existing_values(active,p['predicate'],object_id,literal,temporal)
-            if conflict.contradiction_count:
-                invalidate(p['candidate_id'],conflict.reasons[0] if conflict.reasons else 'AUTHORITY_CONFLICT')
-                continue
 
         source_ref="distillation://"+p["candidate_id"]
         confidence=min(float(p["extractor_confidence"] or 0),

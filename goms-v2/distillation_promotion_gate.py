@@ -7,7 +7,7 @@ from pathlib import Path
 
 from distillation_temporal_authority import authority_profile, record_temporal_authority, temporal_gate_override
 from distillation_review_policy import (
-    assess_existing_values, entity_is_rebindable, gate_fingerprint, normalize_entity_title,
+    assess_existing_values, authority_assertions, entity_is_rebindable, gate_fingerprint, normalize_entity_title,
     review_reason_for_score, requires_hard_review, unique_entity_match,
 )
 from distillation_review_reconciler import ensure_schema as ensure_review_schema
@@ -112,11 +112,7 @@ with closing(sqlite3.connect(DB)) as c, c:
         contradiction_count=0
         subject_id=sres or p.get("subject_id")
         if subject_id:
-            existing_assertions=[dict(r) for r in c.execute(
-              """select predicate,object_id,literal_value,valid_from,epistemic_status,source_ref
-                 from semantic_assertions
-                 where subject_id=? and predicate=? and valid_to is null""",
-              (subject_id,p.get("predicate"))).fetchall()]
+            existing_assertions=authority_assertions(c,subject_id,p.get("predicate"),temporal)
             conflict=assess_existing_values(
                 existing_assertions,p.get("predicate"),ores or p.get("object_id"),p.get("literal"),temporal)
             contradiction_count=conflict.contradiction_count

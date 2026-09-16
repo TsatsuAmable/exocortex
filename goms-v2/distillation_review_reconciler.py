@@ -38,6 +38,8 @@ def ensure_schema(connection):
     ''')
     if 'gate_fingerprint' not in _table_columns(connection,'distillation_promotion_gate'):
         connection.execute('alter table distillation_promotion_gate add column gate_fingerprint text')
+    if 'gate_fingerprint' not in _table_columns(connection,'distillation_graphshape_reviews'):
+        connection.execute('alter table distillation_graphshape_reviews add column gate_fingerprint text')
     connection.executescript('''
       drop trigger if exists distillation_review_proposal_fingerprint_dirty;
       create trigger distillation_review_proposal_fingerprint_dirty

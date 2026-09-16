@@ -458,7 +458,7 @@ CREATE TABLE IF NOT EXISTS distillation_graphshape_reviews(
       candidate_id TEXT PRIMARY KEY, verdict TEXT NOT NULL, rationale TEXT,
       subject_title TEXT,subject_type TEXT,predicate TEXT,
       object_title TEXT,object_type TEXT,literal TEXT,
-      reviewer_model TEXT,reviewed_at TEXT);
+      reviewer_model TEXT,reviewed_at TEXT,gate_fingerprint TEXT);
 CREATE TABLE IF NOT EXISTS distillation_metrics(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   observed_at TEXT NOT NULL,

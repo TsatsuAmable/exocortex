@@ -40,16 +40,30 @@ class GraphShapePolicyTests(unittest.TestCase):
             c.row_factory=sqlite3.Row
             c.executescript('''
               create table distillation_reconciliation_proposals(candidate_id text primary key,status text,canonical_kind text,subject_mode text,subject_id text,subject_type text,subject_title text,predicate text,object_mode text,object_id text,object_type text,object_title text,literal text);
-              create table distillation_promotion_gate(candidate_id text primary key,decision text,score real,reasons text);
-              create table distillation_graphshape_reviews(candidate_id text primary key,verdict text);
+              create table distillation_promotion_gate(candidate_id text primary key,decision text,score real,reasons text,gate_fingerprint text);
+              create table distillation_graphshape_reviews(candidate_id text primary key,verdict text,gate_fingerprint text);
             ''')
             for i in range(5):
                 cid=f'c{i}'
                 c.execute("insert into distillation_reconciliation_proposals values(?,?,?,?,?,?,?,?,?,?,?,?,?)",(cid,'candidate','decision','new',None,'idea',cid,'p','literal',None,None,None,'x'))
-                c.execute("insert into distillation_promotion_gate values(?,?,?,?)",(cid,'AUTO_READY',.9,'[]'))
-            c.execute("insert into distillation_graphshape_reviews values('c0','ACCEPT')")
+                c.execute("insert into distillation_promotion_gate values(?,?,?,?,?)",(cid,'AUTO_READY',.9,'[]','fp-'+cid))
+            c.execute("insert into distillation_graphshape_reviews values('c0','ACCEPT','fp-c0')")
             rows=graphshape_policy.select_pending_shape_reviews(c,limit=2)
         self.assertEqual([r['candidate_id'] for r in rows],['c1','c2'])
+
+    def test_shape_review_must_match_current_gate_fingerprint(self):
+        with closing(sqlite3.connect(':memory:')) as c:
+            c.row_factory=sqlite3.Row
+            c.executescript('''
+              create table distillation_reconciliation_proposals(candidate_id text primary key,status text,canonical_kind text,subject_mode text,subject_id text,subject_type text,subject_title text,predicate text,object_mode text,object_id text,object_type text,object_title text,literal text);
+              create table distillation_promotion_gate(candidate_id text primary key,decision text,score real,reasons text,gate_fingerprint text);
+              create table distillation_graphshape_reviews(candidate_id text primary key,verdict text,gate_fingerprint text);
+            ''')
+            c.execute("insert into distillation_reconciliation_proposals values('c','candidate','decision','new',null,'idea','x','p','literal',null,null,null,'x')")
+            c.execute("insert into distillation_promotion_gate values('c','AUTO_READY',.9,'[]','gate-new')")
+            c.execute("insert into distillation_graphshape_reviews values('c','ACCEPT','gate-old')")
+            rows=graphshape_policy.select_pending_shape_reviews(c,limit=2)
+            self.assertEqual([r['candidate_id'] for r in rows],['c'])
 
 
 class SemanticDaemonTests(unittest.TestCase):

@@ -78,6 +78,35 @@ def _safe_distillation_lineage_target(row):
     )
 
 
+def current_title_matches(connection, title):
+    key=normalize_entity_title(title)
+    if not key:
+        return []
+    rows=connection.execute("select id,type,title,status from entities where type not in ('evidence','source')").fetchall()
+    out=[]
+    for row in rows:
+        item=dict(row) if hasattr(row,'keys') else {'id':row[0],'type':row[1],'title':row[2],'status':row[3]}
+        if entity_is_rebindable(item) and normalize_entity_title(item.get('title')) == key:
+            out.append(item)
+    return out
+
+
+def authority_assertions(connection, subject_id, predicate, temporal_profile):
+    if temporal_profile.mode == 'OBSERVATION' and temporal_profile.observed_at:
+        observed=str(temporal_profile.observed_at)
+        rows=connection.execute("""select object_id,literal_value,valid_from,valid_to,epistemic_status,source_ref
+          from semantic_assertions where subject_id=? and predicate=?
+          and (valid_from is null or valid_from<=?) and (valid_to is null or valid_to>=?)""",
+          (subject_id,predicate,observed,observed)).fetchall()
+    else:
+        rows=connection.execute("""select object_id,literal_value,valid_from,valid_to,epistemic_status,source_ref
+          from semantic_assertions where subject_id=? and predicate=? and valid_to is null""",
+          (subject_id,predicate)).fetchall()
+    return [dict(r) if hasattr(r,'keys') else {
+        'object_id':r[0],'literal_value':r[1],'valid_from':r[2],'valid_to':r[3],
+        'epistemic_status':r[4],'source_ref':r[5]} for r in rows]
+
+
 @dataclass(frozen=True)
 class ConflictAssessment:
     contradiction_count: int

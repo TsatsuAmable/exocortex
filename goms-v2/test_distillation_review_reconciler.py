@@ -50,7 +50,7 @@ class ReviewReconcilerTests(unittest.TestCase):
                 ('idea_roadmap','idea','Roadmap','active'),
             ])
             gate(c)
-            c.execute("insert into distillation_graphshape_reviews values('c1','REWRITE')")
+            c.execute("insert into distillation_graphshape_reviews(candidate_id,verdict) values('c1','REWRITE')")
             result=rr.reconcile_review_batch(c,limit=10,observed_at='t2')
             row=c.execute("select * from distillation_reconciliation_proposals where candidate_id='c1'").fetchone()
             self.assertEqual((row['subject_mode'],row['subject_id']),('existing','project_nemosyne'))
@@ -186,6 +186,16 @@ class ReviewReconcilerTests(unittest.TestCase):
             rr.reconcile_review_batch(c,limit=1,observed_at='t2')
             self.assertEqual(rr.unadjudicated_review_count(c),0)
 
+
+    def test_legacy_shape_approval_is_unversioned_after_migration(self):
+        with closing(make_db()) as c:
+            proposal(c,cid='legacy-shape')
+            gate(c,'legacy-shape',None,None,['LOW_COMPOSITE_CONFIDENCE'])
+            c.execute("insert into distillation_graphshape_reviews(candidate_id,verdict) values('legacy-shape','ACCEPT')")
+            rr.ensure_schema(c)
+            cols=[r[1] for r in c.execute('pragma table_info(distillation_graphshape_reviews)')]
+            self.assertIn('gate_fingerprint',cols)
+            self.assertIsNone(c.execute("select gate_fingerprint from distillation_graphshape_reviews where candidate_id='legacy-shape'").fetchone()[0])
 
     def test_schema_migration_replaces_old_fingerprint_trigger(self):
         with closing(make_db()) as c:
