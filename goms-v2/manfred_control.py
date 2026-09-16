@@ -14,6 +14,7 @@ from goms_store import GomsStore, BRANCH_STATUSES, make_id
 from control_intents import ControlIntentService
 from control_intent_reconciler import reconcile_attention_intents
 from alerts import AlertService
+from distillation_review_surface import build_review_summary
 
 TERMINAL_COMMAND_STATUSES = {"SUCCESS", "REJECTED", "FAILED", "UNKNOWN"}
 MAX_PENDING_AGE_SECONDS = 300
@@ -120,6 +121,7 @@ class ManfredControl:
                        CASE priority WHEN 'P0' THEN 0 WHEN 'P1' THEN 1 ELSE 2 END,
                        updated_at DESC LIMIT ?
             """, (limit,)).fetchall()]
+            authority_review = build_review_summary(con, examples_per_cohort=2)
         for row in branches:
             try:
                 unresolved = json.loads(row.get("unresolved") or "[]")
@@ -138,7 +140,8 @@ class ManfredControl:
                     row["projection_warning"] = f"invalid_{field}_json"
             row["decision_required"] = bool(row.get("decision_required"))
         return {"attention": attention, "governor": governor,
-                "branches": branches, "intents": intents}
+                "branches": branches, "intents": intents,
+                "authority_review": authority_review}
 
     def _claim_command(self, key: str, ctype: str, target: str, payload):
         fingerprint = command_fingerprint(ctype, target, payload)

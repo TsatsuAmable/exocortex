@@ -42,6 +42,18 @@ class ManfredControlTests(unittest.TestCase):
         self.assertEqual(brief["governor"][0]["disposition"], "HUMAN_REQUIRED")
         self.assertEqual(brief["branches"][0]["id"], branch)
 
+    def test_brief_includes_compact_authority_review_summary(self):
+        with closing(sqlite3.connect(self.root / "goms.sqlite3")) as c, c:
+            c.execute("""insert into distillation_reconciliation_proposals(
+              candidate_id,subject_title,predicate,object_title,status,created_at)
+              values('review1','User','prefers','Concise answers','candidate','2026-09-01T00:00:00Z')""")
+            c.execute("""insert into distillation_promotion_gate(
+              candidate_id,decision,score,reasons,contradiction_count,checked_at)
+              values('review1','REVIEW',.85,'["LOW_COMPOSITE_CONFIDENCE"]',0,'2026-09-16T00:00:00Z')""")
+        brief=self.ctl.build_brief(reconcile=False)
+        self.assertEqual(brief["authority_review"]["total"],1)
+        self.assertEqual(brief["authority_review"]["cohorts"][0]["cohort"],"LOW_CONFIDENCE")
+
     def test_brief_reconciliation_materializes_canonical_alerts(self):
         with closing(sqlite3.connect(self.root / "goms.sqlite3")) as c, c:
             c.execute("""insert into attention_items

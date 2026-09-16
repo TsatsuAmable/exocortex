@@ -145,8 +145,12 @@ def reconcile_review_batch(connection, limit=50, observed_at=None):
 
 
 def main():
+    from distillation_review_surface import build_review_summary, publish_review_surface
     with closing(sqlite3.connect(DB)) as c:
-        print(json.dumps(reconcile_review_batch(c,limit=100),sort_keys=True))
+        result=reconcile_review_batch(c,limit=100)
+        summary=build_review_summary(c)
+        publish_review_surface(c,summary)
+        print(json.dumps({**result,'review_summary':summary},sort_keys=True))
 
 
 if __name__=='__main__':
