@@ -8,6 +8,7 @@ import urllib.request
 from mcp.server.mcpserver import MCPServer
 from goms_store import GomsStore, ENTITY_TYPES, BRANCH_STATUSES
 from control_intents import ControlIntentService, INTENT_STATUSES
+from exocortex_context import ExocortexContext
 from manfred_control import ManfredControl
 from neo4j_projection import status as graph_projection_status, rebuild as graph_projection_rebuild, neighbors as graph_neighbors_query, vector_search as graph_vector_search
 
@@ -33,6 +34,20 @@ def _intent_service() -> ControlIntentService:
 
 def _manfred_control() -> ManfredControl:
     return ManfredControl(store.db)
+
+
+@server.tool(
+    structured_output=True,
+    description=(
+        "Return compact canonical goals, constraints, preferences, active work and "
+        "unresolved governed intents. Use this first when reconstructing user/project context."
+    ),
+)
+def exocortex_brief(person_title: str = "User", project: str | None = None,
+                    limit: int = 12) -> dict[str, Any]:
+    return ok(context=ExocortexContext(store).brief(
+        person_title=person_title, project=project, limit=limit
+    ))
 
 
 @server.tool(structured_output=True, description="Store a durable typed memory entity with provenance metadata.")
