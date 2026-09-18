@@ -32,8 +32,12 @@ def install(prefix, source=None):
 
 def hermes_fragment(release):
     goms = Path(release) / "goms-v2"
+    default_python = Path(source_root()) / "goms-v2" / ".venv" / "bin" / "python"
+    command = os.environ.get("EXOCORTEX_PYTHON") or (
+        str(default_python) if default_python.exists() else "python3"
+    )
     return {"mcp_servers": {"goms": {
-        "command": os.environ.get("EXOCORTEX_PYTHON", "python3"),
+        "command": command,
         "args": [str(goms / "mcp_server.py")],
         "enabled": True,
         "env": {"EXOCORTEX_GOMS_ROOT": str(goms)},

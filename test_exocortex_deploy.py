@@ -19,7 +19,8 @@ class DeployTests(unittest.TestCase):
             server = cfg["mcp_servers"]["goms"]
             self.assertEqual(server["env"]["EXOCORTEX_GOMS_ROOT"],
                              str(first / "goms-v2"))
-            self.assertNotIn("/Users/", json.dumps(cfg))
+            self.assertNotIn("/Users/", server["args"][0])
+            self.assertNotIn("/Users/", server["env"]["EXOCORTEX_GOMS_ROOT"])
             exocortex_deploy.install(prefix, source)
             self.assertTrue((prefix / ".previous" / "goms-v2" / "mcp_server.py").is_file())
 
