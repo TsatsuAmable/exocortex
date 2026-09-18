@@ -108,6 +108,80 @@ class ExocortexContextTests(unittest.TestCase):
         self.assertEqual(brief["unresolved_intents"][0]["execution_policy"],
                          "HUMAN_ONLY")
 
+    def test_governed_writes_are_durable_and_cannot_mutate_human_only_intent(self):
+        self.add_intent("intent_guarded", "NEEDS_DECISION")
+        context = ExocortexContext(self.store)
+
+        clarification_id = context.record_clarification(
+            "Boundary detail", "User clarified the recovery boundary.",
+            project="alpha", intent_id="intent_guarded",
+            source="conversation://clarification", actor="hermes",
+        )
+        proposal_id = context.propose_policy(
+            "Recovery policy", "Permit explicitly invoked local recovery mode.",
+            project="alpha", intent_id="intent_guarded",
+            source="conversation://proposal", actor="hermes",
+        )
+
+        clarification = self.store.get_entity(clarification_id)
+        proposal = self.store.get_entity(proposal_id)
+        self.assertEqual(clarification["type"], "evidence")
+        self.assertEqual(clarification["metadata"]["epistemic_role"], "clarification")
+        self.assertEqual(clarification["metadata"]["intent_id"], "intent_guarded")
+        self.assertEqual(clarification["metadata"]["authority_effect"], "none")
+        self.assertEqual(proposal["type"], "idea")
+        self.assertEqual(proposal["status"], "PROPOSED")
+        self.assertTrue(proposal["metadata"]["requires_human_ratification"])
+        self.assertEqual(proposal["metadata"]["authority_effect"], "none")
+
+        with self.store.connect() as con:
+            intent = dict(con.execute(
+                "SELECT status,execution_policy,decision_required FROM control_intents "
+                "WHERE id='intent_guarded'"
+            ).fetchone())
+            events = con.execute(
+                "SELECT count(*) n FROM control_intent_events "
+                "WHERE intent_id='intent_guarded'"
+            ).fetchone()["n"]
+        self.assertEqual(intent["status"], "NEEDS_DECISION")
+        self.assertEqual(intent["execution_policy"], "HUMAN_ONLY")
+        self.assertEqual(intent["decision_required"], 1)
+        self.assertEqual(events, 0)
+
+    def test_governed_write_rejects_unknown_intent_without_creating_entity(self):
+        before = self.store.stats()
+        with self.assertRaises(KeyError):
+            ExocortexContext(self.store).record_clarification(
+                "No target", "Must not orphan intent-bound evidence.",
+                intent_id="intent_missing", actor="hermes",
+            )
+        self.assertEqual(self.store.stats(), before)
+
+    def test_mcp_governed_write_tools_preserve_human_only_intent(self):
+        self.add_intent("intent_guarded", "NEEDS_DECISION")
+        old_store = mcp_server.store
+        mcp_server.store = self.store
+        try:
+            clarification = mcp_server.record_clarification(
+                "Detail", "Clarified", "alpha", "intent_guarded",
+                "conversation://detail", "hermes"
+            )
+            proposal = mcp_server.propose_policy(
+                "Proposal", "Change later", "alpha", "intent_guarded",
+                "conversation://proposal", "hermes"
+            )
+        finally:
+            mcp_server.store = old_store
+        self.assertTrue(clarification["ok"])
+        self.assertTrue(proposal["ok"])
+        with self.store.connect() as con:
+            row = con.execute(
+                "SELECT status,execution_policy FROM control_intents "
+                "WHERE id='intent_guarded'"
+            ).fetchone()
+        self.assertEqual(row["status"], "NEEDS_DECISION")
+        self.assertEqual(row["execution_policy"], "HUMAN_ONLY")
+
     def test_mcp_tool_delegates_to_focused_context_module(self):
         self.add_assertion("assert_goal", self.person_id, "has_objective",
                            object_id=self.goal_id)

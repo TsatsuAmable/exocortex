@@ -50,6 +50,34 @@ def exocortex_brief(person_title: str = "User", project: str | None = None,
     ))
 
 
+@server.tool(structured_output=True, description="Record a provenance-bearing clarification without changing control-intent authority or lifecycle.")
+def record_clarification(title: str, summary: str, project: str | None = None,
+                         intent_id: str | None = None, source: str | None = None,
+                         actor: str = "hermes",
+                         metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    try:
+        eid = ExocortexContext(store).record_clarification(
+            title, summary, project=project, intent_id=intent_id, source=source,
+            actor=actor, metadata=metadata)
+        return ok(clarification_id=eid)
+    except KeyError:
+        return {"ok": False, "error": "intent_not_found"}
+
+
+@server.tool(structured_output=True, description="Record a policy proposal requiring human ratification; it does not become canonical policy by insertion.")
+def propose_policy(title: str, proposal: str, project: str | None = None,
+                   intent_id: str | None = None, source: str | None = None,
+                   actor: str = "hermes",
+                   metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    try:
+        eid = ExocortexContext(store).propose_policy(
+            title, proposal, project=project, intent_id=intent_id, source=source,
+            actor=actor, metadata=metadata)
+        return ok(proposal_id=eid)
+    except KeyError:
+        return {"ok": False, "error": "intent_not_found"}
+
+
 @server.tool(structured_output=True, description="Store a durable typed memory entity with provenance metadata.")
 def remember(entity_type: str, title: str, summary: str = "", project: str | None = None,
              status: str | None = None, confidence: float | None = None,

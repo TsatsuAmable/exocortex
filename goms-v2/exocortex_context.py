@@ -45,6 +45,43 @@ class ExocortexContext:
         }
         return item
 
+    def record_clarification(self, title, summary, *, project=None, intent_id=None,
+                             source=None, actor="hermes", metadata=None):
+        if intent_id:
+            with self.store.connect() as con:
+                if not con.execute("SELECT 1 FROM control_intents WHERE id=?",
+                                   (intent_id,)).fetchone():
+                    raise KeyError(f"Unknown control intent: {intent_id}")
+        meta = {
+            "epistemic_role": "clarification",
+            "intent_id": intent_id,
+            "authority_effect": "none",
+            **(metadata or {}),
+        }
+        return self.store.add_entity(
+            "evidence", title, summary, project, "OBSERVED", None, source,
+            ["clarification", "hermes"], meta, actor=actor,
+        )
+
+    def propose_policy(self, title, proposal, *, project=None, intent_id=None,
+                       source=None, actor="hermes", metadata=None):
+        if intent_id:
+            with self.store.connect() as con:
+                if not con.execute("SELECT 1 FROM control_intents WHERE id=?",
+                                   (intent_id,)).fetchone():
+                    raise KeyError(f"Unknown control intent: {intent_id}")
+        meta = {
+            "epistemic_role": "policy_proposal",
+            "intent_id": intent_id,
+            "requires_human_ratification": True,
+            "authority_effect": "none",
+            **(metadata or {}),
+        }
+        return self.store.add_entity(
+            "idea", title, proposal, project, "PROPOSED", None, source,
+            ["policy-proposal", "hermes"], meta, actor=actor,
+        )
+
     def brief(self, person_title="User", project=None, limit=12):
         limit = max(1, min(int(limit), 100))
         cutoff = datetime.now(timezone.utc).isoformat()
