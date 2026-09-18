@@ -9,6 +9,7 @@ from mcp.server.mcpserver import MCPServer
 from goms_store import GomsStore, ENTITY_TYPES, BRANCH_STATUSES
 from control_intents import ControlIntentService, INTENT_STATUSES
 from exocortex_context import ExocortexContext
+from hermes_machine_tools import register_tools as register_hermes_machine_tools
 from manfred_control import ManfredControl
 from neo4j_projection import status as graph_projection_status, rebuild as graph_projection_rebuild, neighbors as graph_neighbors_query, vector_search as graph_vector_search
 
@@ -76,6 +77,9 @@ def propose_policy(title: str, proposal: str, project: str | None = None,
         return ok(proposal_id=eid)
     except KeyError:
         return {"ok": False, "error": "intent_not_found"}
+
+
+register_hermes_machine_tools(server)
 
 
 @server.tool(structured_output=True, description="Store a durable typed memory entity with provenance metadata.")
