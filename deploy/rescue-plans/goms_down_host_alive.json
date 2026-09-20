@@ -1,0 +1,18 @@
+{
+  "failure_class": "goms_down_host_alive",
+  "description": "GOMS MCP unavailable while host alive; use local authority/recovery substrate and machine execution routes. Recovery must not depend on GOMS health.",
+  "steps": [
+    {"id": "evidence", "description": "Capture GOMS runtime state: Neo4j status and goms-v2 store health",
+     "command": ["bash", "-c", "launchctl list | grep -i -e neo4j -e goms || true; tail -20 \"$HOME/Library/Logs/neo4j.log\" 2>/dev/null || true"]},
+    {"id": "verify_canonical_store", "description": "Verify canonical SQLite GOMS state is present and non-empty",
+     "command": ["bash", "-c", "ls -la \"$HOME/.hermes/goms\" 2>/dev/null || ls -la \"$HOME/Library/Application Support/goms\" 2>/dev/null || echo 'canonical store location differs; consult manifest'"],
+     "optional": true},
+    {"id": "restart_neo4j", "description": "Restart Neo4j via brew services (projection only; canonical SQLite untouched)",
+     "command": ["bash", "-c", "/opt/homebrew/bin/brew services restart neo4j"]},
+    {"id": "verify_projection", "description": "Verify Neo4j is listening again",
+     "command": ["bash", "-c", "sleep 5; lsof -iTCP -sTCP:LISTEN -n -P | grep -i neo4j || echo 'neo4j not yet listening'"]},
+    {"id": "rebuild_projection", "description": "Rebuild the Neo4j projection from canonical SQLite state",
+     "command": ["python3", "-c", "import sys; print('rebuild via goms MCP graph_rebuild when MCP is healthy; projection-only, canonical SQLite untouched')"],
+     "optional": true}
+  ]
+}

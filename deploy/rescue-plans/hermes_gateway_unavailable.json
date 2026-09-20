@@ -1,0 +1,14 @@
+{
+  "failure_class": "hermes_gateway_unavailable",
+  "description": "Hermes gateway service down on macOS host; recover via launchd using host access. GOMS state untouched.",
+  "steps": [
+    {"id": "evidence", "description": "Capture failing-state evidence: gateway service status and recent stderr log",
+     "command": ["bash", "-c", "launchctl list | grep -i hermes; tail -30 \"$HOME/.hermes/profiles/gsvaineko/logs/gateway.error.log\" 2>/dev/null || true"]},
+    {"id": "kickstart", "description": "Kickstart the gsvaineko gateway launchd job",
+     "command": ["bash", "-c", "launchctl kickstart -k gui/$(id -u)/ai.hermes.gateway-gsvaineko"]},
+    {"id": "verify_gateway", "description": "Verify gateway service is listed again",
+     "command": ["bash", "-c", "launchctl list | grep ai.hermes.gateway-gsvaineko"]},
+    {"id": "verify_profile", "description": "Verify profile data intact (state.json + authority audit present)",
+     "command": ["bash", "-c", "test -d \"$HOME/.hermes/profiles/gsvaineko\" && test -f \"$HOME/.hermes/authority/state.json\""]}
+  ]
+}
