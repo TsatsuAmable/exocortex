@@ -38,8 +38,8 @@ class KnowledgeSurfaceSyncTests(unittest.TestCase):
         target = self.vault / ks.PROJECTION_REL
         target.write_text(target.read_text() + "\nHuman note: Notion needs OAuth.\n")
         result = ks.sync(self.root, self.vault)
-        self.assertTrue(result["inbound"]["captured"])
-        entity = self.store.get_entity(result["inbound"]["entity_id"])
+        self.assertTrue(result["inbound"]["projection_edit"]["captured"])
+        entity = self.store.get_entity(result["inbound"]["projection_edit"]["entity_id"])
         self.assertEqual(entity["type"], "evidence")
         self.assertEqual(entity["status"], "CANDIDATE")
         self.assertEqual(entity["metadata"]["surface"], "obsidian")
@@ -49,11 +49,35 @@ class KnowledgeSurfaceSyncTests(unittest.TestCase):
     def test_sync_is_idempotent_without_human_delta(self):
         first = ks.sync(self.root, self.vault)
         second = ks.sync(self.root, self.vault)
-        self.assertFalse(first["inbound"]["captured"])
-        self.assertFalse(second["inbound"]["captured"])
+        self.assertFalse(first["inbound"]["projection_edit"]["captured"])
+        self.assertFalse(second["inbound"]["projection_edit"]["captured"])
         with self.store.connect() as con:
             n = con.execute("select count(*) from entities where source like 'obsidian://%'").fetchone()[0]
         self.assertEqual(n, 0)
+
+    def test_new_human_note_becomes_candidate(self):
+        ks.project(self.root, self.vault, self.store)
+        note = self.vault / "Manfred" / "phone-sync-test.md"
+        note.parent.mkdir(parents=True)
+        note.write_text("Still testing\n")
+        result = ks.sync(self.root, self.vault)
+        notes = result["inbound"]["human_notes"]
+        self.assertEqual(notes["captured"], 1)
+        candidate = notes["candidates"][0]
+        self.assertEqual(candidate["vault_path"], "Manfred/phone-sync-test.md")
+        entity = self.store.get_entity(candidate["entity_id"])
+        self.assertEqual(entity["status"], "CANDIDATE")
+        self.assertEqual(entity["summary"], "Still testing\n")
+        self.assertTrue(entity["metadata"]["requires_reconciliation"])
+
+    def test_unchanged_human_note_is_not_recaptured(self):
+        ks.project(self.root, self.vault, self.store)
+        note = self.vault / "Human.md"
+        note.write_text("One\n")
+        first = ks.sync(self.root, self.vault)
+        second = ks.sync(self.root, self.vault)
+        self.assertEqual(first["inbound"]["human_notes"]["captured"], 1)
+        self.assertEqual(second["inbound"]["human_notes"]["captured"], 0)
 
     def test_same_edit_is_not_duplicated(self):
         ks.project(self.root, self.vault, self.store)

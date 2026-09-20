@@ -137,7 +137,10 @@
         "$GOMS_HOME",
         "--vault",
         "$HOME/Projects/aineko-vault"
-      ]
+      ],
+      "environment": {
+        "GOMS_HOME": "$GOMS_HOME"
+      }
     },
     {
       "label": "org.aineko.goms-notion-sync",

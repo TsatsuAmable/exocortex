@@ -195,6 +195,91 @@ def capture_inbound_edit(root: Path, vault: Path, store: GomsStore) -> dict:
     return {"captured": True, "entity_id": evidence_id, "content_sha256": current_sha}
 
 
+
+def _human_markdown_files(vault: Path):
+    for path in vault.rglob("*.md"):
+        try:
+            rel = path.relative_to(vault)
+        except ValueError:
+            continue
+        if rel == PROJECTION_REL:
+            continue
+        if any(part in {".git", ".obsidian", ".trash"} for part in rel.parts):
+            continue
+        if rel.parts and rel.parts[0] == "90 System" and "Projections" in rel.parts:
+            continue
+        if path.is_file():
+            yield rel, path
+
+
+def capture_human_notes(root: Path, vault: Path, store: GomsStore) -> dict:
+    state = load_state(root)
+    prior = dict(state.get("note_hashes") or {})
+    first_scan = not prior
+    cutoff = state.get("projected_at")
+    try:
+        cutoff_dt = datetime.fromisoformat(cutoff) if cutoff else None
+    except Exception:
+        cutoff_dt = None
+
+    current = {}
+    captured = []
+    for rel, path in _human_markdown_files(vault):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        digest = sha256_text(text)
+        key = rel.as_posix()
+        current[key] = digest
+        previous = prior.get(key)
+        changed = previous != digest
+
+        if first_scan and cutoff_dt is not None:
+            modified = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+            changed = modified >= cutoff_dt
+
+        if not changed:
+            continue
+
+        evidence_id = deterministic_evidence_id(key, digest)
+        source = f"obsidian://aineko-vault/{key}?sha256={digest}"
+        if not _entity_exists(store, evidence_id):
+            title = path.stem
+            store.add_entity(
+                "evidence",
+                f"Obsidian note candidate: {title}",
+                summary=text[:16000],
+                project="Exocortex",
+                status="CANDIDATE",
+                confidence=1.0,
+                source=source,
+                tags=["obsidian", "knowledge-surface", "human-note", "reconciliation-candidate"],
+                metadata={
+                    "surface": "obsidian",
+                    "vault_path": key,
+                    "content_sha256": digest,
+                    "git_head": git_head(vault),
+                    "canonical": False,
+                    "requires_reconciliation": True,
+                },
+                entity_id=evidence_id,
+                actor="knowledge-surface-sync",
+            )
+        captured.append({"entity_id": evidence_id, "vault_path": key, "content_sha256": digest})
+
+    state["note_hashes"] = current
+    state["notes_scanned_at"] = utc_now()
+    if captured:
+        state["last_note_candidates"] = captured[-20:]
+    save_state(root, state)
+    return {
+        "captured": len(captured),
+        "candidates": captured,
+        "scanned": len(current),
+        "first_scan": first_scan,
+    }
+
 def project(root: Path, vault: Path, store: GomsStore) -> dict:
     target = vault / PROJECTION_REL
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -226,9 +311,15 @@ def sync(root: Path, vault: Path) -> dict:
     root = root.expanduser().resolve()
     vault = vault.expanduser().resolve()
     store = GomsStore(root)
-    inbound = capture_inbound_edit(root, vault, store)
+    projection_edit = capture_inbound_edit(root, vault, store)
+    notes = capture_human_notes(root, vault, store)
     outbound = project(root, vault, store)
-    return {"ok": True, "inbound": inbound, "outbound": outbound, "at": utc_now()}
+    return {
+        "ok": True,
+        "inbound": {"projection_edit": projection_edit, "human_notes": notes},
+        "outbound": outbound,
+        "at": utc_now(),
+    }
 
 
 def main() -> int:
