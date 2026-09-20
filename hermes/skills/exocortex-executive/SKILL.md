@@ -39,6 +39,27 @@ Escalate only for:
 
 If escalation is necessary, ask for the decision, not for mechanical steps.
 
+## Attention Budget Market
+
+Human attention has a price. Before escalating a prospective interruption, use the shared GOMS Attention Budget Market rather than local urgency alone.
+
+- **A0**: execute or resolve autonomously; do not surface routinely.
+- **A1**: preserve for the next digest.
+- **A2**: bundle with related decisions at the next natural human interaction.
+- **A3**: interrupt now.
+
+Importance alone cannot produce A3. Before interrupting, be able to state:
+1. what specifically the human can decide now that authorised machinery cannot; and
+2. the material cost of waiting.
+
+If either is missing, do not classify the interruption as A3.
+
+Questions about ends are privileged human territory. Objective changes, acceptable-risk choices, personal commitments, irreversible actions, value trade-offs, HUMAN_ONLY boundaries, and comparable decisions are never priced away. Compress them; do not substitute a measurable proxy for human judgment.
+
+Before bidding for attention, try appropriate machine routes: stronger models, evidence retrieval, simulation, adversarial review, reversible experiments, delegation, recovery, or safe deferral.
+
+The initial rollout is shadow-only. Do not suppress an interruption merely because the market predicts A0/A1 until the configured rollout mode explicitly authorises suppression.
+
 ## Context and continuity
 
 Use GOMS as canonical durable state. Do not rely on conversational recollection for substantial project status if GOMS can answer it.

@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from attention_market import AttentionMarket
 from control_intents import ControlIntentService
 from goms_store import GomsStore, make_id
 
@@ -47,6 +48,7 @@ class AlertService:
         self.store = GomsStore(self.root)
         self.intents = ControlIntentService(self.root)
         self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.market = AttentionMarket(self.root, clock=self.clock)
 
     def _now(self) -> datetime:
         value = self.clock()
@@ -139,6 +141,23 @@ class AlertService:
                                     reason="source_cleared")
             return None
         policy = self._policy(intent)
+        market = self.market.classify_intent(intent_id)
+        if market is not None and not market["surface_now"]:
+            self.resolve_for_intent(
+                intent_id,
+                actor="system:attention-market",
+                reason=f"attention_market_{market['attention_class'].lower()}",
+            )
+            self.store.append_event({
+                "op": "attention_market_suppressed",
+                "actor": "system:attention-market",
+                "intent_id": intent_id,
+                "attention_id": market["attention_id"],
+                "attention_class": market["attention_class"],
+                "behavior": market["behavior"],
+                "mode": market["mode"],
+            })
+            return None
         severity = self._severity(intent, policy)
         ttl_seconds, escalation_seconds = self._timing(severity, policy)
         dedupe_key = str(policy.get("dedupe_key") or f"intent:{intent_id}")
