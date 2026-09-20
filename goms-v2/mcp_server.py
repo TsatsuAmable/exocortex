@@ -7,6 +7,7 @@ import urllib.request
 
 from mcp.server.mcpserver import MCPServer
 from goms_store import GomsStore, ENTITY_TYPES, BRANCH_STATUSES
+from attention_market import AttentionMarket, DEFAULT_EXPERIMENT
 from control_intents import ControlIntentService, INTENT_STATUSES
 from exocortex_context import ExocortexContext
 from hermes_machine_tools import register_tools as register_hermes_machine_tools
@@ -36,6 +37,10 @@ def _intent_service() -> ControlIntentService:
 
 def _manfred_control() -> ManfredControl:
     return ManfredControl(store.db)
+
+
+def _attention_market() -> AttentionMarket:
+    return AttentionMarket(store.root)
 
 
 @server.tool(structured_output=True, description="Rank currently qualified Exocortex model/provider routes for a task using the shared evidence-driven router.")
@@ -328,6 +333,63 @@ def attention_items(category: str | None = None, limit: int = 50) -> dict[str, A
         except Exception:pass
         out.append(x)
     return ok(items=out)
+
+
+@server.tool(
+    structured_output=True,
+    description="Shadow-classify recent interruption candidates through the shared Attention Budget Market without suppressing delivery.",
+)
+def attention_market_shadow(limit: int = 50,
+                            experiment_id: str = DEFAULT_EXPERIMENT) -> dict[str, Any]:
+    return ok(**_attention_market().shadow_sample(
+        limit=max(1, min(int(limit), 200)),
+        experiment_id=str(experiment_id or DEFAULT_EXPERIMENT),
+    ))
+
+
+@server.tool(
+    structured_output=True,
+    description="Return Attention Budget Market experiment metrics plus disagreement cases worth human review.",
+)
+def attention_market_status(experiment_id: str = DEFAULT_EXPERIMENT,
+                            disagreement_limit: int = 50) -> dict[str, Any]:
+    market=_attention_market()
+    eid=str(experiment_id or DEFAULT_EXPERIMENT)
+    return ok(
+        metrics=market.metrics(eid),
+        disagreements=market.disagreements(
+            eid, max(1, min(int(disagreement_limit), 200))
+        ),
+    )
+
+
+@server.tool(
+    structured_output=True,
+    description="Record revealed value for one classified interruption so the market can learn from disagreements with actual usefulness.",
+)
+def record_attention_market_outcome(
+        classification_id: str,
+        useful: bool | None = None,
+        materially_changed_outcome: bool | None = None,
+        minutes_to_decision: float | None = None,
+        resolved_by_machine_later: bool | None = None,
+        bundled: bool | None = None,
+        note: str = "",
+        actor: str = "human") -> dict[str, Any]:
+    try:
+        outcome=_attention_market().record_outcome(
+            classification_id,
+            useful=useful,
+            materially_changed_outcome=materially_changed_outcome,
+            minutes_to_decision=minutes_to_decision,
+            resolved_by_machine_later=resolved_by_machine_later,
+            bundled=bundled,
+            note=note,
+            actor=actor,
+        )
+        return ok(outcome=outcome)
+    except KeyError:
+        return {"ok":False,"error":"attention_classification_not_found"}
 
 
 @server.tool(structured_output=True, description="Return one canonical GOMS control intent by ID.")

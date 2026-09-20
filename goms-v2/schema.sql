@@ -359,6 +359,58 @@ CREATE TABLE IF NOT EXISTS attention_control_intents (
 CREATE INDEX IF NOT EXISTS idx_attention_control_intents_intent
   ON attention_control_intents(intent_id);
 
+CREATE TABLE IF NOT EXISTS attention_market_experiments (
+  id TEXT PRIMARY KEY,
+  mode TEXT NOT NULL DEFAULT 'shadow',
+  status TEXT NOT NULL DEFAULT 'ACTIVE',
+  target_count INTEGER NOT NULL DEFAULT 50,
+  config TEXT NOT NULL DEFAULT '{}',
+  started_at TEXT NOT NULL,
+  completed_at TEXT,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS attention_market_classifications (
+  id TEXT PRIMARY KEY,
+  experiment_id TEXT NOT NULL REFERENCES attention_market_experiments(id),
+  attention_id TEXT NOT NULL REFERENCES attention_items(id),
+  intent_id TEXT,
+  attention_class TEXT NOT NULL,
+  behavior TEXT NOT NULL,
+  bid REAL NOT NULL,
+  expected_value REAL NOT NULL,
+  urgency REAL NOT NULL,
+  human_irreplaceability REAL NOT NULL,
+  attention_cost_minutes REAL NOT NULL,
+  delay_cost REAL NOT NULL DEFAULT 0,
+  human_decision TEXT NOT NULL DEFAULT '',
+  delay_cost_reason TEXT NOT NULL DEFAULT '',
+  protected_end_question INTEGER NOT NULL DEFAULT 0,
+  machine_resolution_expected INTEGER NOT NULL DEFAULT 0,
+  source_family TEXT NOT NULL DEFAULT 'other',
+  rationale TEXT NOT NULL DEFAULT '',
+  mode TEXT NOT NULL DEFAULT 'shadow',
+  surface_now INTEGER NOT NULL DEFAULT 1,
+  classified_at TEXT NOT NULL,
+  UNIQUE(experiment_id,attention_id)
+);
+CREATE INDEX IF NOT EXISTS idx_attention_market_class
+  ON attention_market_classifications(experiment_id,attention_class,classified_at);
+CREATE INDEX IF NOT EXISTS idx_attention_market_family
+  ON attention_market_classifications(experiment_id,source_family,classified_at);
+
+CREATE TABLE IF NOT EXISTS attention_market_outcomes (
+  classification_id TEXT PRIMARY KEY REFERENCES attention_market_classifications(id),
+  useful INTEGER,
+  materially_changed_outcome INTEGER,
+  minutes_to_decision REAL,
+  resolved_by_machine_later INTEGER,
+  bundled INTEGER,
+  note TEXT NOT NULL DEFAULT '',
+  actor TEXT NOT NULL DEFAULT 'human',
+  recorded_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS alerts (
   id TEXT PRIMARY KEY,
   intent_id TEXT NOT NULL REFERENCES control_intents(id),
