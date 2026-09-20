@@ -2,6 +2,7 @@
 from contextlib import closing
 import json
 import sqlite3
+from datetime import datetime, timedelta, timezone
 import unittest
 from unittest import mock
 
@@ -81,6 +82,34 @@ def generator_factory(verdicts):
         }
     return generate,calls
 
+
+class RouteHealthTests(unittest.TestCase):
+    def test_failure_enters_family_scoped_cooldown_and_success_clears_it(self):
+        with closing(make_db()) as c:
+            t=datetime(2026,9,20,18,0,tzinfo=timezone.utc)
+            er.record_route_failure(c,'m1','bad json',base_cooldown_seconds=60,observed_at=t)
+            self.assertTrue(er.route_in_cooldown(c,'m1',observed_at=t+timedelta(seconds=30)))
+            self.assertFalse(er.route_in_cooldown(c,'m1',observed_at=t+timedelta(seconds=61)))
+            er.record_route_success(c,'m1',observed_at=t+timedelta(seconds=31))
+            self.assertFalse(er.route_in_cooldown(c,'m1',observed_at=t+timedelta(seconds=32)))
+            row=c.execute("select consecutive_failures,last_error,cooldown_until,last_success_at from distillation_reviewer_route_health where family=? and model=?",
+                          (er.REVIEW_FAMILY,'m1')).fetchone()
+            self.assertEqual(row['consecutive_failures'],0)
+            self.assertIsNone(row['last_error'])
+            self.assertIsNone(row['cooldown_until'])
+
+    def test_model_selection_skips_only_cooled_review_route(self):
+        with closing(make_db()) as c:
+            er.ensure_schema(c)
+            er.record_route_failure(c,'m1','structured failure',base_cooldown_seconds=3600)
+            fleet=[
+              {'adapter':'ollama','qualification':'qualified','lifecycle_state':'active','network':True,'model':'m1'},
+              {'adapter':'ollama','qualification':'qualified','lifecycle_state':'active','network':True,'model':'m2'},
+              {'adapter':'ollama','qualification':'qualified','lifecycle_state':'active','network':False,'model':'m3'},
+            ]
+            with mock.patch.object(er,'rank_models',return_value=fleet):
+                models=er.select_reviewer_models('safe prompt',required=2,max_models=4,connection=c)
+            self.assertEqual(models,['m2','m3'])
 
 class EvidenceReviewTests(unittest.TestCase):
     def test_unanimous_high_confidence_review_activates_gate(self):

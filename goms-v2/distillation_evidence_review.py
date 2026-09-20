@@ -8,7 +8,7 @@ judge the cited evidence sufficient. All other hard-review reasons remain bindin
 from __future__ import annotations
 
 from contextlib import closing
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import json
 import os
 import sqlite3
@@ -64,6 +64,16 @@ def ensure_schema(connection):
         rationale text not null,
         decided_at text not null,
         primary key(candidate_id,gate_fingerprint)
+      );
+      create table if not exists distillation_reviewer_route_health(
+        family text not null,
+        model text not null,
+        consecutive_failures integer not null default 0,
+        last_error text,
+        cooldown_until text,
+        last_success_at text,
+        updated_at text not null,
+        primary key(family,model)
       );
     """)
 
@@ -160,10 +170,73 @@ def _candidate_payload(connection, row):
     }
 
 
-def select_reviewer_models(prompt, required=2, max_models=4):
+REVIEW_FAMILY="goms-evidence-review"
+
+def _parse_time(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z","+00:00"))
+    except ValueError:
+        return None
+
+
+def route_in_cooldown(connection, model, family=REVIEW_FAMILY, observed_at=None):
+    ensure_schema(connection)
+    row=connection.execute(
+        "select cooldown_until from distillation_reviewer_route_health where family=? and model=?",
+        (family,model),
+    ).fetchone()
+    if not row:
+        return False
+    until=_parse_time(row[0] if not hasattr(row,"keys") else row["cooldown_until"])
+    current=observed_at or datetime.now(timezone.utc)
+    return bool(until and until > current)
+
+
+def record_route_failure(connection, model, error, family=REVIEW_FAMILY,
+                         base_cooldown_seconds=3600, observed_at=None):
+    ensure_schema(connection)
+    current=observed_at or datetime.now(timezone.utc)
+    row=connection.execute(
+        "select consecutive_failures from distillation_reviewer_route_health where family=? and model=?",
+        (family,model),
+    ).fetchone()
+    failures=(int(row[0]) if row else 0)+1
+    cooldown=min(86400,int(base_cooldown_seconds)*(2 ** max(0,failures-1)))
+    until=(current+timedelta(seconds=cooldown)).isoformat()
+    connection.execute("""
+      insert into distillation_reviewer_route_health(
+        family,model,consecutive_failures,last_error,cooldown_until,last_success_at,updated_at)
+      values(?,?,?,?,?,null,?)
+      on conflict(family,model) do update set
+        consecutive_failures=excluded.consecutive_failures,
+        last_error=excluded.last_error,
+        cooldown_until=excluded.cooldown_until,
+        updated_at=excluded.updated_at
+    """,(family,model,failures,str(error)[:500],until,current.isoformat()))
+    connection.commit()
+    return until
+
+
+def record_route_success(connection, model, family=REVIEW_FAMILY, observed_at=None):
+    ensure_schema(connection)
+    current=observed_at or datetime.now(timezone.utc)
+    connection.execute("""
+      insert into distillation_reviewer_route_health(
+        family,model,consecutive_failures,last_error,cooldown_until,last_success_at,updated_at)
+      values(?,?,0,null,null,?,?)
+      on conflict(family,model) do update set
+        consecutive_failures=0,last_error=null,cooldown_until=null,
+        last_success_at=excluded.last_success_at,updated_at=excluded.updated_at
+    """,(family,model,current.isoformat(),current.isoformat()))
+    connection.commit()
+
+
+def select_reviewer_models(prompt, required=2, max_models=4, connection=None):
     rows=rank_models(
         prompt,
-        family="goms-evidence-review",
+        family=REVIEW_FAMILY,
         privacy="non_sensitive" if prompt_allows_remote(prompt) else "private",
         mode="direct",context=8192,threshold=.65,limit=12,
     )
@@ -172,6 +245,7 @@ def select_reviewer_models(prompt, required=2, max_models=4):
         if row.get("adapter")=="ollama"
         and row.get("qualification")=="qualified"
         and row.get("lifecycle_state") in ("active","draining")
+        and not (connection is not None and route_in_cooldown(connection,row.get("model")))
     ]
     if not prompt_allows_remote(prompt):
         qualified=[row for row in qualified if not row.get("network")]
@@ -266,7 +340,7 @@ def review_batch(connection, limit=24, required_reviewers=2, generator=generate_
 
     payload=[_candidate_payload(connection,row) for row in rows]
     prompt=PROMPT+"\n\n"+json.dumps(payload,ensure_ascii=False)
-    models=select_reviewer_models(prompt,required=required_reviewers)
+    models=select_reviewer_models(prompt,required=required_reviewers,connection=connection)
     if len(models) < required_reviewers:
         return {
             "candidates":len(rows),"activated":0,
@@ -282,8 +356,11 @@ def review_batch(connection, limit=24, required_reviewers=2, generator=generate_
             parsed=_parse_response(result.get("parsed") or result.get("response"))
             actual_model=result.get("model",model)
         except Exception as exc:
-            model_errors[model]=f"{type(exc).__name__}: {exc}"[:500]
+            detail=f"{type(exc).__name__}: {exc}"[:500]
+            model_errors[model]=detail
+            record_route_failure(connection,model,detail)
             continue
+        record_route_success(connection,actual_model)
         byid={x.get("candidate_id"):x for x in parsed.get("items",[])}
         for row in rows:
             item=byid.get(row["candidate_id"])

@@ -506,6 +506,11 @@ CREATE TABLE IF NOT EXISTS distillation_evidence_review_decisions(
       decision TEXT NOT NULL,confidence REAL NOT NULL,reviewer_models TEXT NOT NULL,
       rationale TEXT NOT NULL,decided_at TEXT NOT NULL,
       PRIMARY KEY(candidate_id,gate_fingerprint));
+CREATE TABLE IF NOT EXISTS distillation_reviewer_route_health(
+      family TEXT NOT NULL,model TEXT NOT NULL,
+      consecutive_failures INTEGER NOT NULL DEFAULT 0,last_error TEXT,
+      cooldown_until TEXT,last_success_at TEXT,updated_at TEXT NOT NULL,
+      PRIMARY KEY(family,model));
 CREATE TABLE IF NOT EXISTS distillation_rewrite_repairs(
       candidate_id TEXT NOT NULL,gate_fingerprint TEXT NOT NULL,
       action TEXT NOT NULL,reason TEXT NOT NULL,before_state TEXT NOT NULL,
