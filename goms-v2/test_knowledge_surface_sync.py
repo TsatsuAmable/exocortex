@@ -79,6 +79,22 @@ class KnowledgeSurfaceSyncTests(unittest.TestCase):
         self.assertEqual(first["inbound"]["human_notes"]["captured"], 1)
         self.assertEqual(second["inbound"]["human_notes"]["captured"], 0)
 
+    def test_sync_status_page_is_generated_and_not_ingested(self):
+        ks.project(self.root, self.vault, self.store)
+        note = self.vault / "Phone.md"
+        note.write_text("hello\n")
+        result = ks.sync(self.root, self.vault)
+        status = self.vault / ks.STATUS_REL
+        self.assertTrue(status.is_file())
+        text = status.read_text()
+        self.assertIn("Exocortex knowledge-surface sync status", text)
+        self.assertIn("Phone Obsidian", text)
+        self.assertIn("Phone.md", text)
+        self.assertIn("Unresolved Obsidian candidates in GOMS", text)
+        second = ks.sync(self.root, self.vault)
+        paths = [x["vault_path"] for x in second["inbound"]["human_notes"]["candidates"]]
+        self.assertNotIn(ks.STATUS_REL.as_posix(), paths)
+
     def test_same_edit_is_not_duplicated(self):
         ks.project(self.root, self.vault, self.store)
         target = self.vault / ks.PROJECTION_REL

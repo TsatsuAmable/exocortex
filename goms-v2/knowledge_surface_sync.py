@@ -23,6 +23,7 @@ from pathlib import Path
 from goms_store import GomsStore
 
 PROJECTION_REL = Path("90 System/Projections/GOMS Exocortex.md")
+STATUS_REL = Path("90 System/Sync Status.md")
 STATE_REL = Path("knowledge-surfaces/obsidian.json")
 SNAPSHOT_REL = Path("knowledge-surfaces/obsidian-last-projection.md")
 
@@ -202,7 +203,7 @@ def _human_markdown_files(vault: Path):
             rel = path.relative_to(vault)
         except ValueError:
             continue
-        if rel == PROJECTION_REL:
+        if rel in {PROJECTION_REL, STATUS_REL}:
             continue
         if any(part in {".git", ".obsidian", ".trash"} for part in rel.parts):
             continue
@@ -280,6 +281,117 @@ def capture_human_notes(root: Path, vault: Path, store: GomsStore) -> dict:
         "first_scan": first_scan,
     }
 
+
+def _obsidian_candidates(store: GomsStore, limit: int = 20) -> list[dict]:
+    with store.connect() as con:
+        rows = con.execute(
+            "SELECT id, title, status, source, updated_at FROM entities WHERE status = 'CANDIDATE' AND source LIKE 'obsidian://%' ORDER BY updated_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _latest_human_note(vault: Path) -> dict | None:
+    latest = None
+    for rel, path in _human_markdown_files(vault):
+        try:
+            st = path.stat()
+        except OSError:
+            continue
+        item = {
+            "vault_path": rel.as_posix(),
+            "modified_at": datetime.fromtimestamp(st.st_mtime, timezone.utc).isoformat(),
+            "size": st.st_size,
+        }
+        if latest is None or item["modified_at"] > latest["modified_at"]:
+            latest = item
+    return latest
+
+
+def write_sync_status(root: Path, vault: Path, store: GomsStore, run: dict) -> dict:
+    state = load_state(root)
+    candidates = _obsidian_candidates(store)
+    latest_note = _latest_human_note(vault)
+    last_candidates = state.get("last_note_candidates") or []
+    last_candidate = last_candidates[-1] if last_candidates else state.get("last_inbound_candidate")
+    status = "HEALTHY" if run.get("ok") else "DEGRADED"
+
+    lines = [
+        "---",
+        "id: exocortex-sync-status",
+        "type: generated-status",
+        "canonical: false",
+        "generated_by: exocortex-knowledge-surfaces",
+        "---",
+        "",
+        "# Exocortex knowledge-surface sync status",
+        "",
+        f"> **{status}** · regenerated automatically by the GOMS/Obsidian adapter.",
+        "",
+        "## Live path",
+        "",
+        "**Phone Obsidian ⇄ Syncthing ⇄ Mac aineko-vault ⇄ GOMS ⇄ Aineko**",
+        "",
+        "Notion uses its cloud workspace directly and is reconciled by the hourly Aineko Notion steward.",
+        "",
+        "## Last activity",
+        "",
+        f"- Adapter run: {run.get('at') or utc_now()}",
+        f"- Last GOMS projection: {state.get('projected_at') or 'not recorded'}",
+        f"- Last vault scan: {state.get('notes_scanned_at') or 'not recorded'}",
+        f"- Vault Git head before latest projection: {state.get('git_head_before_vault_sync') or 'unknown'}",
+    ]
+    if latest_note:
+        lines += [
+            f"- Latest human note observed: {latest_note['vault_path']}",
+            f"- Latest human note modified: {latest_note['modified_at']}",
+        ]
+    if last_candidate:
+        lines.append(
+            f"- Last GOMS ingest candidate: {last_candidate.get('entity_id', 'unknown')} "
+            f"from {last_candidate.get('vault_path') or last_candidate.get('source') or 'unknown'}"
+        )
+    else:
+        lines.append("- Last GOMS ingest candidate: none recorded")
+
+    lines += [
+        "",
+        "## This run",
+        "",
+        f"- Human notes scanned: **{run.get('inbound', {}).get('human_notes', {}).get('scanned', 0)}**",
+        f"- New/changed notes captured: **{run.get('inbound', {}).get('human_notes', {}).get('captured', 0)}**",
+        f"- Projection edit captured: **{'yes' if run.get('inbound', {}).get('projection_edit', {}).get('captured') else 'no'}**",
+        f"- Unresolved Obsidian candidates in GOMS: **{len(candidates)}**",
+        "",
+        "## Unresolved candidates",
+        "",
+    ]
+    if candidates:
+        for item in candidates:
+            lines.append(f"- {item['id']} · {item['title']} · {item['updated_at']}")
+    else:
+        lines.append("- None.")
+
+    lines += [
+        "",
+        "## What the statuses mean",
+        "",
+        "- Vault file appears here: Syncthing delivered it to the Mac vault.",
+        "- GOMS candidate appears here: the adapter ingested the human-authored change with provenance.",
+        "- Projection timestamp advances: GOMS successfully refreshed its generated Obsidian view.",
+        "- This page is generated and is never treated as an inbound human note.",
+        "",
+    ]
+
+    target = vault / STATUS_REL
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    state["status_page_written_at"] = utc_now()
+    state["status_page_path"] = STATUS_REL.as_posix()
+    save_state(root, state)
+    return {"path": str(target), "candidates": len(candidates), "status": status}
+
+
 def project(root: Path, vault: Path, store: GomsStore) -> dict:
     target = vault / PROJECTION_REL
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -314,12 +426,14 @@ def sync(root: Path, vault: Path) -> dict:
     projection_edit = capture_inbound_edit(root, vault, store)
     notes = capture_human_notes(root, vault, store)
     outbound = project(root, vault, store)
-    return {
+    run = {
         "ok": True,
         "inbound": {"projection_edit": projection_edit, "human_notes": notes},
         "outbound": outbound,
         "at": utc_now(),
     }
+    run["status_page"] = write_sync_status(root, vault, store, run)
+    return run
 
 
 def main() -> int:
