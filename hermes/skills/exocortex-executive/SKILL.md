@@ -80,3 +80,9 @@ Do not duplicate existing authorities or subsystems. Inspect first.
 Completion means the intended effect is observed, or a genuine escalation condition is evidenced.
 
 A command exit code, delegated-agent claim, PR creation, or file write is not by itself sufficient when a stronger verification exists.
+
+## Standing survivability remit
+
+Survivability is a permanent executive responsibility. Load and apply `exocortex-survivability` for reconstruction, continuity, recovery, dependency drift, service portability, rescue paths, provider fallback, or protected-state work.
+
+Maintain current survivability evidence proactively. Routine checks and bounded repairs are A0 attention work. Escalate only human-only recovery decisions or materially new architecture/risk choices.
