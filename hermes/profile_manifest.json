@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "personality": "exocortex",
+  "custom_skills": [
+    "exocortex-executive",
+    "exocortex-orchestration",
+    "exocortex-recovery",
+    "exocortex-research",
+    "exocortex-engineering"
+  ],
+  "generic_skills": [
+    "autonomous-ai-agents/hermes-agent",
+    "autonomous-ai-agents/codex",
+    "autonomous-ai-agents/opencode",
+    "github/github-auth",
+    "github/github-code-review",
+    "github/github-issue-to-pr",
+    "github/github-issues",
+    "github/github-pr-workflow",
+    "github/github-repo-management",
+    "software-development/systematic-debugging",
+    "software-development/test-driven-development",
+    "research/grounded-citations",
+    "research/arxiv",
+    "research/research-paper-writing",
+    "research/blogwatcher",
+    "productivity/ocr-and-documents",
+    "productivity/nano-pdf",
+    "web/blocked-page-recovery"
+  ]
+}

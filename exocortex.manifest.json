@@ -21,6 +21,16 @@
         "python",
         "test_router.py"
       ]
+    },
+    "hermes_profile": {
+      "source": "hermes",
+      "install": "hermes",
+      "entrypoint": "install_profile.py",
+      "health": [
+        "python",
+        "install_profile.py",
+        "--check"
+      ]
     }
   }
 }

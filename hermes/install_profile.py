@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+"""Install or verify the curated GSV Aineko Exocortex profile."""
+import argparse
+import json
+import shutil
+from datetime import datetime, timezone
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+MANIFEST = HERE / "profile_manifest.json"
+SOUL = HERE / "SOUL.md"
+
+PERSONALITY_OVERLAY = (
+    "You are GSV Aineko operating primarily as the Exocortex executive. "
+    "Interpret requests as intents to accomplish, not instructions to relay. "
+    "Reconstruct context, inspect live capabilities, act or delegate within current authority, "
+    "supervise, verify, persist durable state, and report compactly. Human attention is scarce: "
+    "never hand mechanical work back when an authorised route exists. Personality is subordinate "
+    "to Exocortex function: calm, incisive, curious, strategically patient, lightly playful. "
+    "Use GOMS for durable state, the shared model router for cognitive substrate, and the execution "
+    "capability graph for machine authority. Escalate only genuine human decisions, hard authority "
+    "gates, unavailable credentials or physical actions, or demonstrated capability gaps."
+)
+
+def load_manifest():
+    return json.loads(MANIFEST.read_text(encoding="utf-8"))
+
+def find_skill_source(explicit=None):
+    candidates = []
+    if explicit:
+        candidates.append(Path(explicit).expanduser())
+    home = Path.home()
+    candidates += [
+        home / ".hermes" / "skills",
+        home / ".hermes" / "hermes-agent" / "skills",
+    ]
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate.resolve()
+    raise FileNotFoundError("No Hermes generic skill source found")
+
+def desired_paths(manifest):
+    return set(manifest["custom_skills"] + manifest["generic_skills"])
+
+def current_skill_paths(profile_home):
+    root = Path(profile_home) / "skills"
+    if not root.exists():
+        return set()
+    return {str(p.parent.relative_to(root)) for p in root.rglob("SKILL.md")}
+
+def check(profile_home, skill_source=None):
+    manifest = load_manifest()
+    profile = Path(profile_home).expanduser().resolve()
+    skills = profile / "skills"
+    errors = []
+    if not (profile / "SOUL.md").exists():
+        errors.append("SOUL.md missing")
+    elif (profile / "SOUL.md").read_text(encoding="utf-8") != SOUL.read_text(encoding="utf-8"):
+        errors.append("SOUL.md differs from Exocortex source")
+    actual = current_skill_paths(profile)
+    wanted = desired_paths(manifest)
+    missing = sorted(wanted - actual)
+    extra = sorted(actual - wanted)
+    if missing:
+        errors.append("missing skills: " + ", ".join(missing))
+    if extra:
+        errors.append("extra skills: " + ", ".join(extra))
+    return errors
+
+def update_personality_config(profile):
+    config = profile / "config.yaml"
+    if not config.exists():
+        return
+    try:
+        from ruamel.yaml import YAML
+        yaml = YAML()
+        yaml.preserve_quotes = True
+        data = yaml.load(config.read_text(encoding="utf-8")) or {}
+        agent = data.setdefault("agent", {})
+        personalities = agent.setdefault("personalities", {})
+        personalities["exocortex"] = PERSONALITY_OVERLAY
+        display = data.setdefault("display", {})
+        display["personality"] = "exocortex"
+        tmp = config.with_suffix(".yaml.tmp")
+        with tmp.open("w", encoding="utf-8") as fh:
+            yaml.dump(data, fh)
+        tmp.replace(config)
+    except Exception as exc:
+        raise RuntimeError(f"could not update config personality: {exc}") from exc
+
+def install(profile_home, skill_source=None, prune=True):
+    manifest = load_manifest()
+    profile = Path(profile_home).expanduser().resolve()
+    skills = profile / "skills"
+    generic_root = find_skill_source(skill_source)
+    profile.mkdir(parents=True, exist_ok=True)
+    skills.mkdir(parents=True, exist_ok=True)
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    backup = profile / "backups" / f"exocortex-profile-{stamp}"
+    backup.mkdir(parents=True)
+    for name in ("SOUL.md", "config.yaml"):
+        src = profile / name
+        if src.exists():
+            shutil.copy2(src, backup / name)
+    if skills.exists():
+        shutil.copytree(skills, backup / "skills", dirs_exist_ok=True)
+
+    for name in manifest["custom_skills"]:
+        src = HERE / "skills" / name
+        dst = skills / name
+        if dst.exists():
+            shutil.rmtree(dst)
+        shutil.copytree(src, dst)
+
+    for rel in manifest["generic_skills"]:
+        src = generic_root / rel
+        if not (src / "SKILL.md").exists():
+            raise FileNotFoundError(f"generic skill source missing: {src}")
+        dst = skills / rel
+        if dst.exists():
+            shutil.rmtree(dst)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(src, dst)
+
+    if prune:
+        wanted = desired_paths(manifest)
+        for md in list(skills.rglob("SKILL.md")):
+            rel = str(md.parent.relative_to(skills))
+            if rel not in wanted:
+                shutil.rmtree(md.parent)
+
+    shutil.copy2(SOUL, profile / "SOUL.md")
+    update_personality_config(profile)
+    (profile / ".skills_prompt_snapshot.json").unlink(missing_ok=True)
+    return backup
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--profile-home", default="~/.hermes/profiles/gsvaineko")
+    ap.add_argument("--skill-source")
+    ap.add_argument("--check", action="store_true")
+    ap.add_argument("--no-prune", action="store_true")
+    args = ap.parse_args()
+    if args.check:
+        errors = check(args.profile_home, args.skill_source)
+        if errors:
+            for error in errors:
+                print(error)
+            raise SystemExit(1)
+        print("exocortex-profile-ok")
+        return
+    backup = install(args.profile_home, args.skill_source, prune=not args.no_prune)
+    print(backup)
+
+if __name__ == "__main__":
+    main()
