@@ -56,6 +56,12 @@ class HermesMachineToolsTests(unittest.TestCase):
         result = self.tools.select_route("machine")
         self.assertEqual(result["route"], "machine_run")
 
+    def test_supervised_machine_run_executes_and_verifies_local(self):
+        self.auth.enter("OPERATE", principal="user", human_authorized=True)
+        result = self.tools.supervised_machine_run(["printf", "hello"])
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["route"], "machine_run")
+
     def test_attention_gate_exposes_act_route(self):
         result = self.tools.attention_gate([{"name": "machine_run"}])
         self.assertEqual(result["decision"], "ACT")

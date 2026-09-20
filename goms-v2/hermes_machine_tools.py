@@ -5,6 +5,7 @@ from hermes_authority import HermesAuthority
 from hermes_attention_gate import Capability, decide
 from hermes_capability_graph import HermesCapabilityGraph
 from hermes_route_selector import select_route
+from hermes_execution_supervisor import HermesExecutionSupervisor
 from hermes_macos_adapter import MacAuthorityAdapter
 
 
@@ -53,6 +54,19 @@ class HermesMachineTools:
         s = self.authority.enter(mode, principal=principal, reason=reason,
                                  human_authorized=human_authorized)
         return _ok(mode=s.mode, principal=s.principal, entered_at=s.entered_at)
+
+    def supervised_machine_run(self, argv, *, timeout=120):
+        graph = HermesCapabilityGraph(self.authority)
+        def local(task):
+            result = self.adapter.run_user(task, timeout=timeout)
+            return {"ok": result.returncode == 0, "returncode": result.returncode,
+                    "stdout": result.stdout, "stderr": result.stderr}
+        supervisor = HermesExecutionSupervisor(
+            graph.discover,
+            {"machine_run": local},
+            audit=lambda action,target,result,detail:
+                self.authority.audit(action, target=target, result=result, detail=detail))
+        return supervisor.execute(argv, task_kind="machine")
 
     def machine_run(self, argv, *, admin=False, timeout=120):
         result = (self.adapter.run_admin(argv, timeout=timeout) if admin
@@ -105,6 +119,14 @@ def register_tools(server, tools=None):
         try:
             return surface.authority_enter(mode, principal=principal, reason=reason,
                                            human_authorized=human_authorized)
+        except (PermissionError, ValueError) as exc:
+            return {"ok": False, "error": str(exc)}
+
+    @server.tool(structured_output=True,
+                 description="Run an argv command through the supervised Exocortex execution loop. It executes, verifies command success, records failures, and selects alternate routes before permitting escalation. Currently local execution is the directly bound adapter; discovered alternate routes are recorded for failover as their adapters are bound.")
+    def hermes_supervised_machine_run(argv: list[str], timeout: int = 120) -> dict[str, Any]:
+        try:
+            return surface.supervised_machine_run(argv, timeout=timeout)
         except (PermissionError, ValueError) as exc:
             return {"ok": False, "error": str(exc)}
 
