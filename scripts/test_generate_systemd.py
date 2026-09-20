@@ -74,6 +74,16 @@ class GenerateSystemdTests(unittest.TestCase):
         self.assertIn("OnUnitActiveSec=300", text)
         self.assertIn("WantedBy=timers.target", text)
 
+    def test_storage_governor_has_daily_timer(self):
+        proc = run(["--out", str(self.out), "--values", str(self.values)])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        service = self.out / "org-aineko-goms-storage-governor.service"
+        timer = self.out / "org-aineko-goms-storage-governor.timer"
+        self.assertTrue(service.exists())
+        self.assertTrue(timer.exists())
+        self.assertIn("storage_governor.py", service.read_text())
+        self.assertIn("OnUnitActiveSec=86400", timer.read_text())
+
     def test_unresolved_placeholders_skip_service(self):
         empty = self.tmp / "empty.json"
         empty.write_text("{}", encoding="utf-8")

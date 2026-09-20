@@ -23,6 +23,7 @@ if [ -x "goms-v2/.venv/bin/python" ]; then
       test_distillation_evidence_review.py \
       test_distillation_rewrite_repair.py \
       test_distillation_semantic_daemon.py \
+      test_storage_governor.py \
       test_attention_market.py \
       test_hermes_goms_config.py \
       test_hermes_authority.py \

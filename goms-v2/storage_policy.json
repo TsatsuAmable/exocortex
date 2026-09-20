@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "deployment_keep_latest": 2,
+  "protected_deployment_patterns": [
+    "*authority-review-consensus*"
+  ],
+  "raw_dedupe": true,
+  "ledger_rotate_bytes": 268435456,
+  "continuity_proof_max_age_hours": 720,
+  "plan_max_age_hours": 48,
+  "auto_apply": true,
+  "ledger_auto_rotate": true
+}

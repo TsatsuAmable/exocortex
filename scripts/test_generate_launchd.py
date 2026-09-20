@@ -72,6 +72,16 @@ class GenerateLaunchdTests(unittest.TestCase):
         hygiene = self.out / "org.aineko.goms-distillation-hygiene.plist"
         self.assertIn("<integer>300</integer>", hygiene.read_text())
 
+    def test_storage_governor_is_daily_generated_service(self):
+        proc = run(["--out", str(self.out), "--values", str(self.values)])
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        target = self.out / "org.aineko.goms-storage-governor.plist"
+        text = target.read_text()
+        self.assertIn("<integer>86400</integer>", text)
+        self.assertIn("storage_governor.py", text)
+        self.assertIn("storage_policy.json", text)
+        self.assertIn("--enable-ledger-rotation", text)
+
     def test_unresolved_placeholders_skip_service(self):
         empty = self.tmp / "empty.json"
         empty.write_text("{}", encoding="utf-8")

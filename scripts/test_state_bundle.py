@@ -71,6 +71,25 @@ class StateBundleTests(unittest.TestCase):
             (dest / "hermes_authority" / "state.json").read_text(),
             '{"mode":"OBSERVE"}\n')
 
+    def test_create_excludes_archive_tier_directories(self):
+        for name in ("raw", "deployments", "cold", "quarantine", "storage-governance"):
+            target = self.item_a / name
+            target.mkdir(parents=True, exist_ok=True)
+            (target / "large.bin").write_bytes((name.encode() + b"-") * 100)
+        summary = json.loads(run([
+            "create", "--output", str(self.bundle),
+            "--passfile", str(self.passfile),
+            "--item", f"goms_root={self.item_a}",
+            "--item", f"hermes_authority={self.item_b}",
+            "--host", "test-host", "--git-commit", "deadbeef",
+        ]).stdout)
+        self.assertEqual(summary["files"], 4)
+        dest = self.tmp / "archive-tier-restored"
+        run(["restore", "--bundle", str(self.bundle),
+             "--passfile", str(self.passfile), "--dest-root", str(dest)])
+        for name in ("raw", "deployments", "cold", "quarantine", "storage-governance"):
+            self.assertFalse((dest / "goms_root" / name).exists())
+
     def test_create_excludes_sqlite_sidecars(self):
         (self.item_a / "state.db-wal").write_bytes(b"WAL-BYTES")
         (self.item_a / "state.db-shm").write_bytes(b"SHM-BYTES")
