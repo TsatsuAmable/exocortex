@@ -10,7 +10,24 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 MODULE_ROOT = Path(__file__).resolve().parent
-ROOT = Path(os.environ.get("GOMS_HOME", MODULE_ROOT)).expanduser().resolve()
+
+def _state_root():
+    configured = os.environ.get("GOMS_HOME")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    module_text = str(MODULE_ROOT)
+    deployed = (
+        os.environ.get("EXOCORTEX_GOMS_ROOT")
+        or "/.local/share/exocortex/current/" in module_text
+    )
+    if deployed:
+        raise RuntimeError(
+            "GOMS_HOME is required for deployed Exocortex code; "
+            "state may not default to the rotating release directory"
+        )
+    return MODULE_ROOT
+
+ROOT = _state_root()
 DB = ROOT / "goms.sqlite3"
 LEDGER = ROOT / "events.jsonl"
 SCHEMA = MODULE_ROOT / "schema.sql"
