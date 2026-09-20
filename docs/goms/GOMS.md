@@ -32,6 +32,12 @@ Throughput doctrine and backlog scaling are defined in docs/goms/PROMOTION_THROU
 
 Design principles include partial-work preservation, extraction/judgment separation, promotion gates, provenance, admissibility discipline, ABSTAIN, and shared model routing.
 
+## Attention governance
+
+Prospective interruptions are governed by the shared Attention Budget Market defined in docs/goms/ATTENTION_BUDGET_MARKET.md.
+
+The market sits between canonical control intent and alert delivery. It prices demand for human cognition using expected value, urgency, human irreplaceability, and estimated attention cost, while preserving explicit human authority over ends. Shadow mode is the default; no suppression occurs until revealed-value evidence supports it.
+
 ## Governance
 
 GOMS distinguishes evidence/clarification, proposals, canonical policy/decision, and HUMAN_ONLY transitions.

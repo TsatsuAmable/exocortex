@@ -201,7 +201,10 @@
       "secrets": [
         "manfred-read.token",
         "manfred-authority.token"
-      ]
+      ],
+      "environment": {
+        "GOMS_ATTENTION_MARKET_MODE": "shadow"
+      }
     },
     {
       "label": "org.aineko.goms-manfred-authority",
