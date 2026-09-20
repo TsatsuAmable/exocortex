@@ -35,3 +35,17 @@ Use the minimum useful surface. Avoid mirroring everything everywhere.
 - human-readable synthesis: Obsidian
 - structured coordination/collaboration: Notion
 - immediate operational control: Manfred
+
+## Implemented wiring
+
+### Obsidian / aineko-vault
+
+The governed bidirectional path is implemented in `goms-v2/knowledge_surface_sync.py`.
+
+Scheduled order is inbound-first: detect edits to the last generated projection, persist any delta as provenance-bearing GOMS evidence with CANDIDATE status, regenerate the canonical projection under `90 System/Projections/`, persist projection hashes/state outside the vault, then let the existing Git-backed vault sync provide transport and history.
+
+This avoids last-writer-wins and prevents a human edit from being silently destroyed before capture.
+
+### Notion
+
+Hermes's Nous-approved official Notion MCP is the integration substrate. It can be installed non-interactively, but initial authentication requires human Notion OAuth approval. Once authenticated, Aineko owns the same projection/reconciliation loop under this authority contract.

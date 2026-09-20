@@ -126,6 +126,20 @@
       ]
     },
     {
+      "label": "org.aineko.goms-obsidian-sync",
+      "role": "Governed GOMS to Obsidian projection and inbound candidate capture",
+      "start_interval_seconds": 900,
+      "command": [
+        "<GOMS_VENV_PYTHON>",
+        "$EXOCORTEX_CURRENT/goms-v2/knowledge_surface_sync.py",
+        "obsidian-sync",
+        "--root",
+        "$GOMS_HOME",
+        "--vault",
+        "$HOME/Projects/aineko-vault"
+      ]
+    },
+    {
       "label": "org.aineko.goms-guardian",
       "role": "Daily guardian packet/review",
       "start_interval_seconds": 86400,
