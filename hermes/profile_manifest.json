@@ -6,7 +6,8 @@
     "exocortex-orchestration",
     "exocortex-recovery",
     "exocortex-research",
-    "exocortex-engineering"
+    "exocortex-engineering",
+    "exocortex-self-improvement"
   ],
   "generic_skills": [
     "autonomous-ai-agents/hermes-agent",
