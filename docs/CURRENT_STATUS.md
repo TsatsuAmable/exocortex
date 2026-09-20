@@ -59,3 +59,9 @@ The reconstruction workflow is committed under `.github/workflows/reconstruction
 On 2026-09-20 GitHub-hosted jobs for this private repository were blocked before runner startup by the account billing/spending state. This is an infrastructure/account condition, not a test failure.
 
 Until that external condition is cleared, run `scripts/verify_reconstruction.sh` locally. The same reconstruction tests were green locally before publication.
+
+## Attention Budget Market shadow experiment
+
+A shared A0–A3 attention classifier is implemented on the GOMS control-intent → alert path. Default mode is shadow: classifications are recorded without changing delivery. The first experiment targets 50 real candidate interruptions and reviews only classifier/outcome disagreements before any suppression is enabled.
+
+The canonical GOMS corpus contained fewer than 50 historical attention items when the experiment was introduced, so the system must accumulate real candidates rather than synthesize quota-filling examples.
