@@ -44,6 +44,18 @@
         "test_delivery.py",
         "test_workspace.py"
       ]
+    },
+    "survivability": {
+      "source": "survivability",
+      "install": "survivability",
+      "entrypoint": "survivability_audit.py",
+      "health": [
+        "python",
+        "-m",
+        "unittest",
+        "-q",
+        "test_survivability_audit.py"
+      ]
     }
   },
   "external_dependencies": {
