@@ -18,6 +18,7 @@ def resolve_router_path():
         here.parents[1] / "compute" / "model-routing" / "router.py",
         here.parents[1] / "model-routing" / "router.py",
         Path.home() / "Library" / "Application Support" / "Aineko" / "compute" / "model-routing" / "router.py",
+        Path.home() / ".local" / "share" / "exocortex" / "current" / "model-routing" / "router.py",
         Path.home() / "Documents" / "aineko-infrastructure" / "compute" / "model-routing" / "router.py",
     )
     for candidate in candidates:
