@@ -101,6 +101,41 @@ class EvidenceReviewTests(unittest.TestCase):
             self.assertEqual(decision['decision'],'ACCEPT')
             self.assertAlmostEqual(decision['confidence'],.94)
 
+    def test_structured_failure_falls_through_to_more_qualified_reviewers(self):
+        with closing(make_db()) as c:
+            seed(c)
+            calls=[]
+            def generator(prompt, *, models):
+                model=models[0]; calls.append(model)
+                if model=='m1':
+                    raise RuntimeError('structured output unavailable')
+                return {'model':model,'parsed':{'items':[{
+                    'candidate_id':'c1','verdict':'ACCEPT','confidence':.96,
+                    'rationale':'direct evidence'}]}}
+            with mock.patch.object(er,'select_reviewer_models',return_value=['m1','m2','m3']):
+                result=er.review_batch(c,limit=5,generator=generator)
+            self.assertEqual(result['activated'],1)
+            self.assertEqual(calls,['m1','m2','m3'])
+            self.assertIn('m1',result['model_errors'])
+            reviewers=json.loads(c.execute(
+                "select reviewer_models from distillation_evidence_review_decisions where candidate_id='c1'"
+            ).fetchone()[0])
+            self.assertEqual(reviewers,['m2','m3'])
+
+    def test_transient_reviewer_failure_leaves_candidate_pending(self):
+        with closing(make_db()) as c:
+            seed(c)
+            def generator(prompt, *, models):
+                raise RuntimeError('provider unavailable')
+            with mock.patch.object(er,'select_reviewer_models',return_value=['m1','m2','m3']):
+                result=er.review_batch(c,limit=5,generator=generator)
+            self.assertEqual(result['decisions']['PENDING'],1)
+            self.assertIsNone(c.execute(
+                "select 1 from distillation_evidence_review_decisions where candidate_id='c1'"
+            ).fetchone())
+            gate=c.execute("select decision,gate_fingerprint from distillation_promotion_gate where candidate_id='c1'").fetchone()
+            self.assertEqual(tuple(gate),('REVIEW','base-fp'))
+
     def test_reject_keeps_gate_in_review(self):
         with closing(make_db()) as c:
             seed(c)

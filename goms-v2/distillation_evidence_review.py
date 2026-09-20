@@ -160,7 +160,7 @@ def _candidate_payload(connection, row):
     }
 
 
-def select_reviewer_models(prompt, required=2):
+def select_reviewer_models(prompt, required=2, max_models=4):
     rows=rank_models(
         prompt,
         family="goms-evidence-review",
@@ -183,7 +183,7 @@ def select_reviewer_models(prompt, required=2):
         model=row.get("model")
         if model and model not in chosen:
             chosen.append(model)
-        if len(chosen)>=required:
+        if len(chosen)>=max(required,int(max_models)):
             break
     return chosen
 
@@ -275,12 +275,14 @@ def review_batch(connection, limit=24, required_reviewers=2, generator=generate_
         }
 
     reviews_by_candidate={row["candidate_id"]:[] for row in rows}
+    model_errors={}
     for model in models:
         try:
             result=generator(prompt,models=(model,))
             parsed=_parse_response(result.get("parsed") or result.get("response"))
             actual_model=result.get("model",model)
-        except Exception:
+        except Exception as exc:
+            model_errors[model]=f"{type(exc).__name__}: {exc}"[:500]
             continue
         byid={x.get("candidate_id"):x for x in parsed.get("items",[])}
         for row in rows:
@@ -303,16 +305,23 @@ def review_batch(connection, limit=24, required_reviewers=2, generator=generate_
             """,(row["candidate_id"],row["gate_fingerprint"],actual_model,
                  verdict,confidence,rationale,now()))
         connection.commit()
+        if all(len({x["model"] for x in reviews_by_candidate[cid]}) >= required_reviewers
+               for cid in reviews_by_candidate):
+            break
 
-    counts={"ACCEPT":0,"ABSTAIN":0,"REJECT":0}
+    counts={"ACCEPT":0,"ABSTAIN":0,"REJECT":0,"PENDING":0}
     activated=0
     for row in rows:
+        reviews=reviews_by_candidate[row["candidate_id"]]
+        reviewers=sorted({x["model"] for x in reviews})
+        if len(reviewers) < required_reviewers:
+            counts["PENDING"]+=1
+            continue
         decision,confidence,rationale=aggregate_reviews(
-            reviews_by_candidate[row["candidate_id"]],
+            reviews,
             required=required_reviewers,
         )
         counts[decision]+=1
-        reviewers=sorted({x["model"] for x in reviews_by_candidate[row["candidate_id"]]})
         connection.execute("""
           insert or replace into distillation_evidence_review_decisions(
             candidate_id,gate_fingerprint,decision,confidence,
@@ -326,7 +335,7 @@ def review_batch(connection, limit=24, required_reviewers=2, generator=generate_
     connection.commit()
     return {
         "candidates":len(rows),"activated":activated,
-        "decisions":counts,"models":models,
+        "decisions":counts,"models":models,"model_errors":model_errors,
     }
 
 
