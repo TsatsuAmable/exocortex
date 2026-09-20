@@ -17,7 +17,17 @@ fi
 if [ -x "goms-v2/.venv/bin/python" ]; then
   (
     cd goms-v2
-    .venv/bin/python -m unittest -q       test_model_router_bridge.py       test_distillation_worker_pool.py       test_distillation_evidence_review.py       test_distillation_rewrite_repair.py       test_distillation_semantic_daemon.py       test_hermes_goms_config.py       test_hermes_authority.py       test_hermes_capability_graph.py       test_hermes_route_selector.py
+    .venv/bin/python -m unittest -q \
+      test_model_router_bridge.py \
+      test_distillation_worker_pool.py \
+      test_distillation_evidence_review.py \
+      test_distillation_rewrite_repair.py \
+      test_distillation_semantic_daemon.py \
+      test_storage_governor.py \
+      test_hermes_goms_config.py \
+      test_hermes_authority.py \
+      test_hermes_capability_graph.py \
+      test_hermes_route_selector.py
   )
 else
   echo "NOTE: goms-v2/.venv unavailable; run 'cd goms-v2 && uv sync' for full GOMS contract tests" >&2

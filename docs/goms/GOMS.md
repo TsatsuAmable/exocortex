@@ -32,6 +32,11 @@ Throughput doctrine and backlog scaling are defined in docs/goms/PROMOTION_THROU
 
 Design principles include partial-work preservation, extraction/judgment separation, promotion gates, provenance, admissibility discipline, ABSTAIN, and shared model routing.
 
+## Storage governance
+
+Hot/warm/cold storage lifecycle is defined in docs/goms/STORAGE_GOVERNANCE.md.
+The daily storage governor is dry-run safe and requires a fresh verified continuity proof before automatic reclamation.
+
 ## Governance
 
 GOMS distinguishes evidence/clarification, proposals, canonical policy/decision, and HUMAN_ONLY transitions.
