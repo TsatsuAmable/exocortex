@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from dataclasses import asdict
 from hermes_attention_gate import Capability
+from hermes_fabric_discovery import discover_fabric
 
 CORE_CAPABILITIES = (
     ("machine_run", "machine", "OPERATE"),
@@ -12,9 +13,10 @@ CORE_CAPABILITIES = (
 
 class HermesCapabilityGraph:
     """Runtime capability inventory used before Hermes escalates mechanical work."""
-    def __init__(self, authority, probes=None):
+    def __init__(self, authority, probes=None, fabric_discoverer=None):
         self.authority = authority
         self.probes = probes or {}
+        self.fabric_discoverer = fabric_discoverer or discover_fabric
 
     def discover(self):
         found = []
@@ -27,6 +29,11 @@ class HermesCapabilityGraph:
                                     healthy=healthy)),
                 "kind": kind, "required_mode": required,
             })
+        for row in self.fabric_discoverer():
+            item = dict(row)
+            item["authorized"] = bool(item.get("authorized", True) and
+                                      self.authority.allows(item.get("required_mode", "OPERATE")))
+            found.append(item)
         return found
 
     def candidates(self, kind=None):
