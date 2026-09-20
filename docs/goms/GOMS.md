@@ -36,6 +36,11 @@ Design principles include partial-work preservation, extraction/judgment separat
 
 Hot/warm/cold storage lifecycle is defined in docs/goms/STORAGE_GOVERNANCE.md.
 The daily storage governor is dry-run safe and requires a fresh verified continuity proof before automatic reclamation.
+## Attention governance
+
+Prospective interruptions are governed by the shared Attention Budget Market defined in docs/goms/ATTENTION_BUDGET_MARKET.md.
+
+The market sits between canonical control intent and alert delivery. It prices demand for human cognition using expected value, urgency, human irreplaceability, and estimated attention cost, while preserving explicit human authority over ends. Shadow mode is the default; no suppression occurs until revealed-value evidence supports it.
 
 ## Governance
 

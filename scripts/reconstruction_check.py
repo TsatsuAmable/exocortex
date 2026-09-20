@@ -24,6 +24,8 @@ REQUIRED = [
     "goms-v2/storage_governor.py",
     "goms-v2/storage_policy.json",
     "docs/goms/STORAGE_GOVERNANCE.md",
+    "goms-v2/attention_market.py",
+    "docs/goms/ATTENTION_BUDGET_MARKET.md",
     "compute/model-routing/router.py",
     "compute/model-routing/fleet.json",
     "hermes/SOUL.md",
