@@ -1,0 +1,46 @@
+name: Reconstruction contract
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  structural:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Reconstruction self-check
+        run: python scripts/reconstruction_check.py
+      - name: Deployment regression
+        run: python -m unittest -v test_exocortex_deploy.py
+      - name: Router regression
+        run: python compute/model-routing/test_router.py
+
+  profile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install ruamel.yaml
+      - name: GSV Aineko profile regression
+        run: python -m unittest -v hermes/test_install_profile.py
+
+  goms-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - name: Create GOMS environment
+        working-directory: goms-v2
+        run: uv sync
+      - name: Focused GOMS/Exocortex regression
+        working-directory: goms-v2
+        run: |
+          uv run python -m unittest -q             test_model_router_bridge.py             test_distillation_worker_pool.py             test_hermes_goms_config.py             test_hermes_authority.py             test_hermes_capability_graph.py             test_hermes_route_selector.py

@@ -1,0 +1,71 @@
+# Merge these semantics into the active Hermes profile.
+# Reconstruction reference only; never commit a live token-bearing config.
+
+model:
+  provider: ollama-launch
+  base_url: http://127.0.0.1:11434/v1
+  api_key: ollama
+  default: glm-5.3-flash:cloud
+  context_length: 65536
+
+fallback_model:
+  provider: ollama-launch
+  base_url: http://127.0.0.1:11434/v1
+  api_key: ollama
+  model: gsvaineko-core:v1
+
+terminal:
+  backend: docker
+  cwd: .
+  timeout: 180
+  home_mode: profile
+  container_cpu: 1
+  container_memory: 5120
+  container_disk: 51200
+  container_persistent: true
+  docker_mount_cwd_to_workspace: false
+  lifetime_seconds: 300
+
+agent:
+  max_turns: 500
+  reasoning_effort: medium
+  verbose: false
+  personalities:
+    exocortex: >-
+      You are GSV Aineko operating primarily as the Exocortex executive.
+      Interpret requests as intents to accomplish, not instructions to relay.
+      Reconstruct context, inspect live capabilities, act or delegate within
+      current authority, supervise, verify, persist durable state, and report
+      compactly. Human attention is scarce: never hand mechanical work back
+      when an authorised route exists.
+
+display:
+  personality: exocortex
+
+privacy:
+  redact_pii: true
+
+delegation:
+  max_iterations: 250
+
+code_execution:
+  max_tool_calls: 50
+  timeout: 300
+
+platform_toolsets:
+  whatsapp: [web, memory, clarify, tts, goms, remote-commander]
+
+mcp_servers:
+  goms:
+    command: "<GOMS_PYTHON>"
+    args: ["<EXOCORTEX_PREFIX>/current/goms-v2/mcp_server.py"]
+    enabled: true
+    env:
+      EXOCORTEX_GOMS_ROOT: "<EXOCORTEX_PREFIX>/current/goms-v2"
+      GOMS_HOME: "<GOMS_DATA_ROOT>"
+      AINEKO_MODEL_ROUTER_PATH: "<EXOCORTEX_PREFIX>/current/model-routing/router.py"
+  remote-commander:
+    url: http://127.0.0.1:8771/mcp
+    enabled: true
+    headers:
+      Authorization: "<LOCAL_BEARER_TOKEN>"

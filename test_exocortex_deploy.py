@@ -18,6 +18,7 @@ class DeployTests(unittest.TestCase):
             self.assertTrue((first / "model-routing" / "fleet.json").is_file())
             self.assertTrue((first / "hermes" / "SOUL.md").is_file())
             self.assertTrue((first / "hermes" / "install_profile.py").is_file())
+            self.assertTrue((first / "delivery-controller" / "delivery.py").is_file())
             self.assertTrue((first / "hermes" / "skills" / "exocortex-executive" / "SKILL.md").is_file())
             self.assertFalse((first / "goms-v2" / ".venv").exists())
             self.assertFalse((first / "goms-v2" / "goms.sqlite3").exists())

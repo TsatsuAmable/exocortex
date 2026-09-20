@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "components": {
     "goms": {
       "source": "goms-v2",
@@ -31,6 +31,77 @@
         "install_profile.py",
         "--check"
       ]
+    },
+    "delivery_controller": {
+      "source": "delivery-controller",
+      "install": "delivery-controller",
+      "entrypoint": "delivery.py",
+      "health": [
+        "python",
+        "-m",
+        "unittest",
+        "-q",
+        "test_delivery.py",
+        "test_workspace.py"
+      ]
     }
+  },
+  "external_dependencies": {
+    "hermes_agent": {
+      "kind": "agent_runtime",
+      "repository": "https://github.com/NousResearch/hermes-agent",
+      "known_good_commit": "f6ddd89692dff1f900983a16208f39a1485a14eb",
+      "known_good_version": "0.21.1"
+    },
+    "remote_commander": {
+      "kind": "machine_effector",
+      "contract": "MCP",
+      "default_url": "http://127.0.0.1:8771/mcp"
+    },
+    "ollama": {
+      "kind": "model_runtime",
+      "default_url": "http://127.0.0.1:11434"
+    },
+    "neo4j": {
+      "kind": "replaceable_graph_projection",
+      "default_bolt_url": "bolt://127.0.0.1:7687"
+    },
+    "tailscale": {
+      "kind": "private_network",
+      "required_for": "remote/private-fabric routes only"
+    },
+    "github_cli": {
+      "kind": "delivery_external_authority",
+      "command": "gh"
+    },
+    "docker": {
+      "kind": "hermes_sandbox_runtime",
+      "command": "docker"
+    }
+  },
+  "state_roots": {
+    "goms": {
+      "env": "GOMS_HOME",
+      "reference_macos": "~/Library/Application Support/Aineko/GOMS",
+      "git": false,
+      "canonical": true
+    },
+    "hermes_profile": {
+      "reference": "~/.hermes/profiles/gsvaineko",
+      "git": false,
+      "canonical": "runtime continuity only"
+    },
+    "hermes_authority": {
+      "reference": "~/.hermes/authority",
+      "git": false,
+      "canonical": "local authority/audit"
+    }
+  },
+  "service_inventory": "deploy/launchd/service-inventory.example.json",
+  "reconstruction": {
+    "guide": "docs/reconstruction/REBUILD_FROM_GITHUB.md",
+    "acceptance": "docs/reconstruction/ACCEPTANCE_CHECKLIST.md",
+    "state_boundary": "docs/reconstruction/STATE_AND_SECRETS.md",
+    "self_check": "scripts/reconstruction_check.py"
   }
 }

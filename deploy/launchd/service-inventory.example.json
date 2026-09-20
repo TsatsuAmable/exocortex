@@ -1,0 +1,223 @@
+{
+  "schema_version": 1,
+  "reference_date": "2026-09-20",
+  "platform": "macOS launchd",
+  "note": "Sanitized live reference. Paths use placeholders; private IPs and secrets are intentionally omitted.",
+  "placeholders": {
+    "HOME": "User home directory",
+    "GOMS_HOME": "Canonical GOMS data/code runtime root",
+    "EXOCORTEX_CURRENT": "$HOME/.local/share/exocortex/current",
+    "HERMES_HOME": "$HOME/.hermes/profiles/gsvaineko",
+    "TAILSCALE_BIND_IP": "Machine private Tailnet address",
+    "ALLOWED_CLIENT_IP": "Explicit private client address"
+  },
+  "services": [
+    {
+      "label": "ai.hermes.gateway-gsvaineko",
+      "role": "GSV Aineko messaging/agent gateway",
+      "run_at_load": true,
+      "keep_alive": true,
+      "command": [
+        "$HOME/.hermes/hermes-agent/venv/bin/python",
+        "-m",
+        "hermes_cli.main",
+        "--profile",
+        "gsvaineko",
+        "gateway",
+        "run",
+        "--external-supervisor"
+      ],
+      "working_directory": "$HERMES_HOME"
+    },
+    {
+      "label": "org.aineko.goms-distillation-queue",
+      "role": "Durable distillation queue server",
+      "run_at_load": true,
+      "keep_alive": true,
+      "command": [
+        "python3",
+        "$GOMS_HOME/distillation_queue_server.py"
+      ]
+    },
+    {
+      "label": "org.aineko.goms-distillation-workers",
+      "role": "Distillation worker pool using shared model router",
+      "run_at_load": true,
+      "keep_alive": true,
+      "command": [
+        "python3",
+        "$GOMS_HOME/distillation_worker_daemon.py",
+        "--batch-size",
+        "100",
+        "--active-sleep",
+        "1",
+        "--idle-sleep",
+        "15"
+      ],
+      "environment": {
+        "AINEKO_MODEL_ROUTER_PATH": "$EXOCORTEX_CURRENT/model-routing/router.py"
+      }
+    },
+    {
+      "label": "org.aineko.goms-distillation-semantic",
+      "role": "Semantic promotion/materialization daemon",
+      "run_at_load": true,
+      "keep_alive": true,
+      "command": [
+        "python3",
+        "$GOMS_HOME/distillation_semantic_daemon.py"
+      ],
+      "environment": {
+        "GOMS_PROMOTION_ENABLED": "1"
+      }
+    },
+    {
+      "label": "org.aineko.goms-distillation-hygiene",
+      "role": "Queue hygiene",
+      "start_interval_seconds": 300,
+      "command": [
+        "python3",
+        "$GOMS_HOME/distillation_queue_hygiene.py"
+      ]
+    },
+    {
+      "label": "org.aineko.goms-distillation-metrics",
+      "role": "Distillation metrics",
+      "start_interval_seconds": 60,
+      "command": [
+        "python3",
+        "$GOMS_HOME/distillation_metrics.py"
+      ]
+    },
+    {
+      "label": "org.aineko.goms-semantic-maintenance",
+      "role": "Semantic maintenance",
+      "start_interval_seconds": 900,
+      "command": [
+        "<GOMS_VENV_PYTHON>",
+        "$GOMS_HOME/semantic_maintenance.py"
+      ]
+    },
+    {
+      "label": "org.aineko.goms-topology-controller",
+      "role": "Topology monitoring",
+      "start_interval_seconds": 60,
+      "command": [
+        "python3",
+        "$GOMS_HOME/topology_controller.py"
+      ]
+    },
+    {
+      "label": "org.aineko.goms-infrastructure-health",
+      "role": "Infrastructure health controller",
+      "start_interval_seconds": 60,
+      "command": [
+        "python3",
+        "$GOMS_HOME/infrastructure_health_controller.py"
+      ]
+    },
+    {
+      "label": "org.aineko.goms-cognition-health",
+      "role": "Cognition health controller",
+      "start_interval_seconds": 60,
+      "command": [
+        "python3",
+        "$GOMS_HOME/cognition_health_controller.py"
+      ]
+    },
+    {
+      "label": "org.aineko.goms-guardian",
+      "role": "Daily guardian packet/review",
+      "start_interval_seconds": 86400,
+      "command": [
+        "zsh",
+        "-lc",
+        "python3 $GOMS_HOME/guardian_packet.py && python3 $GOMS_HOME/guardian_review.py"
+      ]
+    },
+    {
+      "label": "org.aineko.goms-agalmic-controller",
+      "role": "Agalmic/scarcity controller where enabled",
+      "start_interval_seconds": 300,
+      "command": [
+        "python3",
+        "$GOMS_HOME/agalmic_controller.py"
+      ]
+    },
+    {
+      "label": "org.aineko.goms-manfred-read",
+      "role": "Manfred read projection proxy",
+      "run_at_load": true,
+      "keep_alive": true,
+      "command": [
+        "$GOMS_HOME/start_manfred_read.sh"
+      ],
+      "environment": {
+        "GOMS_MANFRED_READ_HOST": "<TAILSCALE_BIND_IP_OR_LOOPBACK>",
+        "GOMS_MANFRED_READ_CLIENT": "<ALLOWED_CLIENT_IP>"
+      }
+    },
+    {
+      "label": "org.aineko.goms-manfred-control",
+      "role": "Manfred loopback control surface",
+      "run_at_load": true,
+      "keep_alive": true,
+      "command": [
+        "$GOMS_HOME/start_manfred_control.sh"
+      ],
+      "secrets": [
+        "manfred-read.token",
+        "manfred-authority.token"
+      ]
+    },
+    {
+      "label": "org.aineko.goms-manfred-authority",
+      "role": "Manfred authority/signature proxy",
+      "run_at_load": true,
+      "keep_alive": true,
+      "command": [
+        "$GOMS_HOME/start_manfred_authority.sh"
+      ],
+      "environment": {
+        "GOMS_MANFRED_AUTHORITY_HOST": "<TAILSCALE_BIND_IP>",
+        "GOMS_MANFRED_AUTHORITY_CLIENT": "<ALLOWED_CLIENT_IP>"
+      },
+      "secrets": [
+        "authority signing/verification material"
+      ]
+    },
+    {
+      "label": "com.aineko.delivery-controller",
+      "role": "Durable software delivery controller tick",
+      "run_at_load": true,
+      "start_interval_seconds": 300,
+      "command": [
+        "python3",
+        "<DELIVERY_CONTROLLER_ROOT>/tick_all.py"
+      ]
+    },
+    {
+      "label": "sh.brew.neo4j",
+      "role": "Replaceable GOMS graph projection service",
+      "external": true
+    },
+    {
+      "label": "remote-commander",
+      "role": "External authorised host MCP effector",
+      "external": true,
+      "endpoint": "http://127.0.0.1:8771/mcp"
+    },
+    {
+      "label": "ollama",
+      "role": "Local/cloud inference gateway",
+      "external": true,
+      "endpoint": "http://127.0.0.1:11434"
+    }
+  ],
+  "historical_or_optional": [
+    "ChatGPT live ingest/export-watch",
+    "replication worker (not proven failover; further work deferred)",
+    "vault sync",
+    "legacy/default Hermes gateway"
+  ]
+}
