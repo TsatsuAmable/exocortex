@@ -121,8 +121,9 @@ def _review_select_sql(select_one=False):
 
 def unadjudicated_review_count(connection):
     ensure_schema(connection)
-    row=connection.execute(_review_select_sql(select_one=True)+' limit 1').fetchone()
-    return 1 if row else 0
+    return int(connection.execute(
+        'select count(*) from (' + _review_select_sql() + ')'
+    ).fetchone()[0])
 
 
 def _persisted_fingerprint(connection,row):

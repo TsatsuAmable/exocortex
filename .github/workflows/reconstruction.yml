@@ -43,4 +43,13 @@ jobs:
       - name: Focused GOMS/Exocortex regression
         working-directory: goms-v2
         run: |
-          uv run python -m unittest -q             test_model_router_bridge.py             test_distillation_worker_pool.py             test_hermes_goms_config.py             test_hermes_authority.py             test_hermes_capability_graph.py             test_hermes_route_selector.py
+          uv run python -m unittest -q \
+            test_model_router_bridge.py \
+            test_distillation_worker_pool.py \
+            test_distillation_evidence_review.py \
+            test_distillation_rewrite_repair.py \
+            test_distillation_semantic_daemon.py \
+            test_hermes_goms_config.py \
+            test_hermes_authority.py \
+            test_hermes_capability_graph.py \
+            test_hermes_route_selector.py

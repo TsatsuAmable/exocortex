@@ -178,6 +178,14 @@ class ReviewReconcilerTests(unittest.TestCase):
             trigger=c.execute("select name from sqlite_master where type='trigger' and name='distillation_review_proposal_fingerprint_dirty'").fetchone()
             self.assertIsNotNone(trigger)
 
+    def test_unadjudicated_review_count_reports_full_backlog(self):
+        with closing(make_db()) as c:
+            for i in range(3):
+                cid=f'backlog-{i}'
+                c.execute("insert into distillation_reconciliation_proposals values(?, 'preference','existing','u',null,'User','p','literal',null,null,null,null,.85,'r','candidate','2026-09-01T00:00:00Z')",(cid,))
+                gate(c,cid,None,None,['LOW_COMPOSITE_CONFIDENCE'])
+            self.assertEqual(rr.unadjudicated_review_count(c),3)
+
     def test_unadjudicated_detection_uses_current_persisted_fingerprint(self):
         with closing(make_db()) as c:
             c.execute("insert into distillation_reconciliation_proposals values('c4','preference','existing','u',null,'User','p','literal',null,null,null,null,.85,'r','candidate','2026-09-01T00:00:00Z')")

@@ -496,6 +496,21 @@ CREATE TABLE IF NOT EXISTS distillation_review_adjudications(
       PRIMARY KEY(candidate_id,gate_fingerprint));
 CREATE INDEX IF NOT EXISTS idx_dist_review_adjudications_action
 ON distillation_review_adjudications(action,adjudicated_at);
+CREATE TABLE IF NOT EXISTS distillation_evidence_reviews(
+      candidate_id TEXT NOT NULL,gate_fingerprint TEXT NOT NULL,
+      reviewer_model TEXT NOT NULL,verdict TEXT NOT NULL,confidence REAL NOT NULL,
+      rationale TEXT NOT NULL,reviewed_at TEXT NOT NULL,
+      PRIMARY KEY(candidate_id,gate_fingerprint,reviewer_model));
+CREATE TABLE IF NOT EXISTS distillation_evidence_review_decisions(
+      candidate_id TEXT NOT NULL,gate_fingerprint TEXT NOT NULL,
+      decision TEXT NOT NULL,confidence REAL NOT NULL,reviewer_models TEXT NOT NULL,
+      rationale TEXT NOT NULL,decided_at TEXT NOT NULL,
+      PRIMARY KEY(candidate_id,gate_fingerprint));
+CREATE TABLE IF NOT EXISTS distillation_rewrite_repairs(
+      candidate_id TEXT NOT NULL,gate_fingerprint TEXT NOT NULL,
+      action TEXT NOT NULL,reason TEXT NOT NULL,before_state TEXT NOT NULL,
+      after_state TEXT NOT NULL,repaired_at TEXT NOT NULL,
+      PRIMARY KEY(candidate_id,gate_fingerprint));
 CREATE TABLE IF NOT EXISTS distillation_ready(
       candidate_id TEXT PRIMARY KEY,status TEXT NOT NULL,confidence REAL NOT NULL,
       reason TEXT NOT NULL,ready_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);

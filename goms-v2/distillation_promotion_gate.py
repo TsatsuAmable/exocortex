@@ -7,9 +7,11 @@ from pathlib import Path
 
 from distillation_temporal_authority import authority_profile, record_temporal_authority, temporal_gate_override
 from distillation_review_policy import (
+    LOW_COMPOSITE_CONFIDENCE,
     assess_existing_values, authority_assertions, entity_is_rebindable, gate_fingerprint, normalize_entity_title,
     review_reason_for_score, requires_hard_review, unique_entity_match,
 )
+from distillation_evidence_review import accepted_override
 from distillation_review_reconciler import ensure_schema as ensure_review_schema
 
 ROOT=Path.home()/"Library/Application Support/Aineko/GOMS"
@@ -138,6 +140,25 @@ with closing(sqlite3.connect(DB)) as c, c:
             decision="REVIEW"
         else:
             decision="AUTO_READY"
+
+        base_gate_row=dict(p)
+        base_gate_row.update({
+            'decision':decision,'score':score,'reasons':json.dumps(reasons),
+            'subject_resolution':sres,'object_resolution':ores,
+            'contradiction_count':contradiction_count,
+            'temporal_mode':temporal.mode,'temporal_observed_at':temporal.observed_at,
+            'temporal_auto_eligible':temporal.auto_eligible,'temporal_reasons':list(temporal.reasons),
+        })
+        base_fingerprint=gate_fingerprint(base_gate_row)
+        if (
+            decision=='REVIEW'
+            and LOW_COMPOSITE_CONFIDENCE in reasons
+            and not requires_hard_review([r for r in reasons if r != LOW_COMPOSITE_CONFIDENCE])
+            and accepted_override(c,p['candidate_id'],base_fingerprint)
+        ):
+            reasons=[r for r in reasons if r != LOW_COMPOSITE_CONFIDENCE]
+            reasons.append('EVIDENCE_SUFFICIENCY_CONSENSUS')
+            decision='AUTO_READY'
 
         gate_row=dict(p)
         gate_row.update({

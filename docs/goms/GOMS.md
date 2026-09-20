@@ -28,6 +28,8 @@ Tool names may evolve; these semantic roles are the stable contract.
 
 Raw conversational/event material flows through queue, extraction, validation/review, semantic promotion, and canonical entities/assertions.
 
+Throughput doctrine and backlog scaling are defined in docs/goms/PROMOTION_THROUGHPUT.md. Human work-rate is treated as an input signal; normal operation scales semantic promotion capacity rather than slowing ingestion at the human boundary.
+
 Design principles include partial-work preservation, extraction/judgment separation, promotion gates, provenance, admissibility discipline, ABSTAIN, and shared model routing.
 
 ## Governance

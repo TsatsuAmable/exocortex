@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from contextlib import closing
-import json, sqlite3
+import json, os, sqlite3
 from datetime import datetime,timezone
 from pathlib import Path
 
@@ -56,13 +56,15 @@ with closing(sqlite3.connect(DB)) as c, c:
         predicate_map[norm(pr["canonical"])]=pr["canonical"]
         for a in json.loads(pr["aliases"] or "[]"):
             predicate_map[norm(a)]=pr["canonical"]
-    eligible=select_eligible_candidates(c,limit=60)
+    candidate_limit=max(1,min(int(os.getenv('GOMS_RECONCILE_BATCH_SIZE','120')),500))
+    model_batch=max(1,min(int(os.getenv('GOMS_RECONCILE_MODEL_BATCH_SIZE','6')),30))
+    eligible=select_eligible_candidates(c,limit=candidate_limit)
 
     errors=[]; written=0
     allowed_ids={e["id"] for e in existing}
     context=json.dumps(existing,ensure_ascii=False)
-    for i in range(0,len(eligible),6):
-        batch=eligible[i:i+6]
+    for i in range(0,len(eligible),model_batch):
+        batch=eligible[i:i+model_batch]
         prompt=SCHEMA+"\n\nEXISTING ENTITIES:\n"+context+"\n\nCANDIDATES:\n"+json.dumps(batch,ensure_ascii=False)
         try:
             reply=call(prompt); out=parse(reply.get("response",""))

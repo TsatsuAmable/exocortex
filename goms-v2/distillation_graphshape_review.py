@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from contextlib import closing
-import json, sqlite3
+import json, os, sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -49,7 +49,8 @@ with closing(sqlite3.connect(DB)) as c, c:
       object_title TEXT,object_type TEXT,literal TEXT,
       reviewer_model TEXT,reviewed_at TEXT,gate_fingerprint TEXT);""")
     ensure_review_schema(c)
-    rows=select_pending_shape_reviews(c,limit=12)
+    batch_size=max(1,min(int(os.getenv('GOMS_GRAPHSHAPE_BATCH_SIZE','12')),96))
+    rows=select_pending_shape_reviews(c,limit=batch_size)
     payload=[]
     for r in rows:
         payload.append({

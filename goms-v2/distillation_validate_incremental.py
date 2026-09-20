@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from contextlib import closing
-import json,sqlite3
+import json,os,sqlite3
 from datetime import datetime,timezone
 from pathlib import Path
 
@@ -27,11 +27,13 @@ Do not invent facts.'''
 
 with closing(sqlite3.connect(DB)) as c:
     c.row_factory=sqlite3.Row
+    candidate_limit=max(1,min(int(os.getenv('GOMS_VALIDATE_BATCH_SIZE','100')),500))
+    model_batch=max(1,min(int(os.getenv('GOMS_VALIDATE_MODEL_BATCH_SIZE','10')),50))
     candidates=[dict(r) for r in c.execute("""select d.*
       from distillation_candidates d
       left join distillation_validations v on v.candidate_id=d.id
       where v.candidate_id is null
-      order by d.created_at asc limit 50""").fetchall()]
+      order by d.created_at asc limit ?""",(candidate_limit,)).fetchall()]
     evidence={}
     for x in candidates:
         for eid in json.loads(x.get("evidence_ids") or "[]"):
@@ -40,8 +42,8 @@ with closing(sqlite3.connect(DB)) as c:
                 evidence[eid]=row["summary"] if row else ""
     stats={"accepted":0,"reclassified":0,"rejected":0,"missing":0}
     errors=[]
-    for i in range(0,len(candidates),10):
-        batch=candidates[i:i+10]; payload=[]
+    for i in range(0,len(candidates),model_batch):
+        batch=candidates[i:i+model_batch]; payload=[]
         for x in batch:
             ev=json.loads(x.get("evidence_ids") or "[]")
             payload.append({
