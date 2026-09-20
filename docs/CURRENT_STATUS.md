@@ -52,3 +52,10 @@ The repository now contains enough architectural, configuration, source, identit
 Full continuity additionally requires the separate state/secret backup tier.
 
 This claim should be tested periodically by clean-room reconstruction rather than trusted indefinitely.
+
+## GitHub CI status
+
+The reconstruction workflow is committed under `.github/workflows/reconstruction.yml`.
+On 2026-09-20 GitHub-hosted jobs for this private repository were blocked before runner startup by the account billing/spending state. This is an infrastructure/account condition, not a test failure.
+
+Until that external condition is cleared, run `scripts/verify_reconstruction.sh` locally. The same reconstruction tests were green locally before publication.
