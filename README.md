@@ -52,6 +52,7 @@ See `docs/architecture/OVERVIEW.md` for the full logical architecture.
 - Repository map: `docs/reconstruction/REPOSITORY_MAP.md`
 - State/secrets boundary: `docs/reconstruction/STATE_AND_SECRETS.md`
 - Acceptance contract: `docs/reconstruction/ACCEPTANCE_CHECKLIST.md`
+- Verified clean-clone record: `docs/reconstruction/VERIFICATION_RECORD_2026-09-20.md`
 - Architecture: `docs/architecture/OVERVIEW.md`
 - Components: `docs/architecture/COMPONENTS.md`
 - Runtime/reference config: `docs/runtime/REFERENCE_CONFIGURATION.md`
