@@ -14,13 +14,23 @@ class DeployTests(unittest.TestCase):
             source = Path(__file__).resolve().parent
             first = exocortex_deploy.install(prefix, source)
             self.assertTrue((first / "goms-v2" / "mcp_server.py").is_file())
+            self.assertTrue((first / "model-routing" / "router.py").is_file())
+            self.assertTrue((first / "model-routing" / "fleet.json").is_file())
             self.assertFalse((first / "goms-v2" / ".venv").exists())
+            self.assertFalse((first / "goms-v2" / "goms.sqlite3").exists())
+            self.assertFalse((first / "goms-v2" / "events.jsonl").exists())
             cfg = exocortex_deploy.hermes_fragment(first)
             server = cfg["mcp_servers"]["goms"]
             self.assertEqual(server["env"]["EXOCORTEX_GOMS_ROOT"],
                              str(first / "goms-v2"))
+            self.assertEqual(server["env"]["AINEKO_MODEL_ROUTER_PATH"],
+                             str(first / "model-routing" / "router.py"))
+            self.assertEqual(Path(server["env"]["GOMS_HOME"]),
+                             (prefix / "data" / "goms").resolve())
             self.assertNotIn("/Users/", server["args"][0])
             self.assertNotIn("/Users/", server["env"]["EXOCORTEX_GOMS_ROOT"])
+            self.assertNotIn("/Users/", server["env"]["AINEKO_MODEL_ROUTER_PATH"])
+            self.assertNotIn("/Users/", server["env"]["GOMS_HOME"])
             exocortex_deploy.install(prefix, source)
             self.assertTrue((prefix / ".previous" / "goms-v2" / "mcp_server.py").is_file())
 

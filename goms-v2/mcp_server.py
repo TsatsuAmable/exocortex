@@ -11,6 +11,7 @@ from control_intents import ControlIntentService, INTENT_STATUSES
 from exocortex_context import ExocortexContext
 from hermes_machine_tools import register_tools as register_hermes_machine_tools
 from manfred_control import ManfredControl
+from model_router_bridge import rank_models
 from neo4j_projection import status as graph_projection_status, rebuild as graph_projection_rebuild, neighbors as graph_neighbors_query, vector_search as graph_vector_search
 
 store = GomsStore()
@@ -35,6 +36,26 @@ def _intent_service() -> ControlIntentService:
 
 def _manfred_control() -> ManfredControl:
     return ManfredControl(store.db)
+
+
+@server.tool(structured_output=True, description="Rank currently qualified Exocortex model/provider routes for a task using the shared evidence-driven router.")
+def model_route(prompt: str, family: str = "general", privacy: str = "non_sensitive",
+                mode: str = "direct", context: int = 0, threshold: float = 0.65,
+                limit: int = 8) -> dict[str, Any]:
+    if privacy not in {"non_sensitive", "private"}:
+        raise ValueError("privacy must be non_sensitive or private")
+    if mode not in {"direct", "agent"}:
+        raise ValueError("mode must be direct or agent")
+    rows = rank_models(
+        prompt,
+        family=family,
+        privacy=privacy,
+        mode=mode,
+        context=max(0, int(context or 0)),
+        threshold=float(threshold),
+        limit=max(1, min(int(limit or 8), 20)),
+    )
+    return ok(routes=rows)
 
 
 @server.tool(

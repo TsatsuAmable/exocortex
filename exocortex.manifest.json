@@ -5,7 +5,22 @@
       "source": "goms-v2",
       "install": "goms-v2",
       "entrypoint": "mcp_server.py",
-      "health": ["python", "-m", "unittest", "-q", "test_hermes_goms_config.py"]
+      "health": [
+        "python",
+        "-m",
+        "unittest",
+        "-q",
+        "test_hermes_goms_config.py"
+      ]
+    },
+    "model_router": {
+      "source": "compute/model-routing",
+      "install": "model-routing",
+      "entrypoint": "router.py",
+      "health": [
+        "python",
+        "test_router.py"
+      ]
     }
   }
 }

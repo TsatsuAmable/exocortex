@@ -17,10 +17,19 @@ def install(prefix, source=None):
     if staging.exists():
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
-    shutil.copytree(src / "goms-v2", staging / "goms-v2",
-                    ignore=shutil.ignore_patterns(".venv", "__pycache__", "*.pyc"))
+    manifest = json.loads((src / "exocortex.manifest.json").read_text(encoding="utf-8"))
+    for component in manifest.get("components", {}).values():
+        source_rel = component["source"]
+        install_rel = component["install"]
+        shutil.copytree(
+            src / source_rel,
+            staging / install_rel,
+            ignore=shutil.ignore_patterns(
+                ".venv", "__pycache__", "*.pyc", "goms.sqlite3", "events.jsonl", "*.lock"
+            ),
+        )
     (staging / "manifest.json").write_text(
-        (src / "exocortex.manifest.json").read_text(encoding="utf-8"), encoding="utf-8")
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     old = prefix / ".previous"
     if old.exists():
         shutil.rmtree(old)
@@ -30,8 +39,14 @@ def install(prefix, source=None):
     return release
 
 
-def hermes_fragment(release):
-    goms = Path(release) / "goms-v2"
+def hermes_fragment(release, goms_data_root=None):
+    release = Path(release)
+    goms = release / "goms-v2"
+    data_root = Path(
+        goms_data_root
+        or os.environ.get("EXOCORTEX_GOMS_DATA_ROOT")
+        or (release.parent / "data" / "goms")
+    ).expanduser().resolve()
     default_python = Path(source_root()) / "goms-v2" / ".venv" / "bin" / "python"
     command = os.environ.get("EXOCORTEX_PYTHON") or (
         str(default_python) if default_python.exists() else "python3"
@@ -40,7 +55,11 @@ def hermes_fragment(release):
         "command": command,
         "args": [str(goms / "mcp_server.py")],
         "enabled": True,
-        "env": {"EXOCORTEX_GOMS_ROOT": str(goms)},
+        "env": {
+            "EXOCORTEX_GOMS_ROOT": str(goms),
+            "GOMS_HOME": str(data_root),
+            "AINEKO_MODEL_ROUTER_PATH": str(release / "model-routing" / "router.py"),
+        },
     }}}
 
 
@@ -49,8 +68,9 @@ if __name__ == "__main__":
     p.add_argument("--prefix", default="~/.local/share/exocortex")
     p.add_argument("--source")
     p.add_argument("--print-hermes-config", action="store_true")
+    p.add_argument("--goms-data-root")
     a = p.parse_args()
     release = install(a.prefix, a.source)
     print(release)
     if a.print_hermes_config:
-        print(json.dumps(hermes_fragment(release), indent=2))
+        print(json.dumps(hermes_fragment(release, a.goms_data_root), indent=2))

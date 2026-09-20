@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock, Thread
 
+from model_router_bridge import rank_models
+
 PROMPT = '''Extract only durable semantic state from the evidence below.
 Return JSON only: {"items":[...]}.
 Each item: kind, subject, predicate, object, literal, confidence, evidence_ids.
@@ -215,15 +217,57 @@ class QueueHTTPClient:
         return self._post('/release', {'worker':worker,'segment_id':segment_id,'error':error})
 
 
-def default_lane_specs():
-    chain = (
-        ProviderSpec('deepseek-cloud-primary','ollama','deepseek-v4-flash:cloud',True),
+def _legacy_provider_chain():
+    return (
+        ProviderSpec('glm53-cloud-fallback','ollama','glm-5.3-flash:cloud',True),
         ProviderSpec('gpt-oss-cloud-fallback','ollama','gpt-oss:120b-cloud',True),
         ProviderSpec('gsvaineko-local','ollama','gsvaineko-core:v1',False),
-        ProviderSpec('bonsai-local','ollama','bonsai27b:q1',False),
-        ProviderSpec('qwen-last-resort','ollama','qwen3.5:4b',False),
+        ProviderSpec('qwen-local-fallback','ollama','qwen3.5:4b',False),
     )
-    return tuple(LaneSpec(f'cloud-{name}','cloud-first',chain) for name in ('a','b','c'))
+
+
+def routed_provider_chain():
+    try:
+        rows = rank_models(
+            PROMPT,
+            family='goms-distillation',
+            privacy='non_sensitive',
+            mode='direct',
+            context=8192,
+            limit=20,
+        )
+    except Exception:
+        return _legacy_provider_chain()
+
+    supported = []
+    seen = set()
+    for row in rows:
+        adapter = str(row.get('adapter') or '')
+        model = str(row.get('model') or '')
+        if adapter not in {'ollama','opencode'} or not model:
+            continue
+        key = (adapter, model)
+        if key in seen:
+            continue
+        seen.add(key)
+        supported.append(ProviderSpec(
+            str(row.get('candidate') or model),
+            adapter,
+            model,
+            bool(row.get('network', True)),
+        ))
+
+    if not any(not p.remote for p in supported):
+        for provider in _legacy_provider_chain():
+            if not provider.remote and (provider.adapter, provider.model) not in seen:
+                supported.append(provider)
+                seen.add((provider.adapter, provider.model))
+    return tuple(supported) or _legacy_provider_chain()
+
+
+def default_lane_specs():
+    chain = routed_provider_chain()
+    return tuple(LaneSpec(f'router-{name}','shared-router',chain) for name in ('a','b','c'))
 
 
 def _new_stats(lane):

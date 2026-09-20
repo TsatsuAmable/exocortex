@@ -94,23 +94,23 @@ class ProviderBrokerTests(unittest.TestCase):
         ])
         self.assertEqual([broker.choose('non_sensitive').name for _ in range(4)], ['a','b','a','b'])
 
-    def test_default_pool_has_three_cloud_first_lanes_and_no_dedicated_qwen_lane(self):
+    def test_default_pool_has_three_shared_router_lanes(self):
         lanes=worker_pool.default_lane_specs()
         self.assertEqual(len(lanes),3)
-        self.assertTrue(all(x.mode=='cloud-first' for x in lanes))
-        self.assertTrue(all(x.providers[-1].model=='qwen3.5:4b' for x in lanes))
+        self.assertTrue(all(x.mode=='shared-router' for x in lanes))
+        self.assertTrue(all(x.providers for x in lanes))
 
 
-    def test_default_provider_chain_is_ollama_cloud_first_and_qwen_last(self):
+    def test_default_provider_chain_uses_shared_router_and_drains_retiring_deepseek(self):
         lanes=worker_pool.default_lane_specs()
         self.assertEqual(len(lanes),3)
         for lane in lanes:
-            self.assertEqual(lane.providers[0].model,'deepseek-v4-flash:cloud')
+            self.assertEqual(lane.providers[0].model,'glm-5.3-flash:cloud')
             self.assertTrue(lane.providers[0].remote)
-            self.assertEqual(lane.providers[1].model,'gpt-oss:120b-cloud')
-            self.assertTrue(lane.providers[1].remote)
-            self.assertEqual(lane.providers[-1].model,'qwen3.5:4b')
-            self.assertFalse(lane.providers[-1].remote)
+            self.assertTrue(any(not p.remote for p in lane.providers))
+            models=[p.model for p in lane.providers]
+            self.assertIn('deepseek-v4-flash:cloud',models)
+            self.assertGreater(models.index('deepseek-v4-flash:cloud'),0)
 
     def test_normal_chatgpt_segment_allows_remote_provider(self):
         self.assertTrue(worker_pool.segment_allows_remote({'content':'ordinary project discussion','privacy':None}))
