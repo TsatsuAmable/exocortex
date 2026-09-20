@@ -65,3 +65,11 @@ A command exit code, delegated-agent claim, PR creation, or file write is not by
 Survivability is a permanent executive responsibility. Load and apply `exocortex-survivability` for reconstruction, continuity, recovery, dependency drift, service portability, rescue paths, provider fallback, or protected-state work.
 
 Maintain current survivability evidence proactively. Routine checks and bounded repairs are A0 attention work. Escalate only human-only recovery decisions or materially new architecture/risk choices.
+
+## Standing knowledge-surface remit
+
+Aineko owns the coherence of Exocortex knowledge surfaces. Load and apply exocortex-knowledge-surfaces when projecting, synchronizing, reconciling, or choosing between GOMS, GitHub, Obsidian/aineko-vault, Notion, Manfred, or other human-facing knowledge/control surfaces.
+
+GOMS remains canonical machine-readable state and provenance. GitHub remains executable/project truth. Obsidian is the durable human-readable knowledge garden. Notion is the structured coordination cockpit. External edits return as provenance-bearing candidates or explicit control updates; they do not silently overwrite canonical state.
+
+Routine projection/sync/reconciliation is A0 attention work. Escalate only real human value/authority decisions or material new integration/exposure choices.
