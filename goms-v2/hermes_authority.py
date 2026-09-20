@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 """Local Hermes authority ceiling, independent of GOMS availability.
 
 Authority modes: OBSERVE < OPERATE < ADMIN < RECOVERY < EMERGENCY.

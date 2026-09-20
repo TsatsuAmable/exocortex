@@ -1,0 +1,16 @@
+{
+  "failure_class": "remote_commander_unavailable",
+  "description": "Remote Commander route down; attempt repair under local recovery authority without widening permissions.",
+  "steps": [
+    {"id": "evidence", "description": "Capture current MCP gateway state and recent errors",
+     "command": ["bash", "-c", "ps aux | grep -i -e remote-commander -e mcp | grep -v grep | head -10 || true"]},
+    {"id": "diagnose_port", "description": "Check whether the Remote Commander service is listening (informational; optional)",
+     "command": ["bash", "-c", "lsof -iTCP -sTCP:LISTEN -n -P | grep -i -e commander -e node | head -10 || true"],
+     "optional": true},
+    {"id": "restart_service", "description": "Restart the Remote Commander launchd job if present",
+     "command": ["bash", "-c", "launchctl kickstart -k gui/$(id -u)/com.aineko.remote-commander || echo 'no launchd job under that label; inspect inventory'"],
+     "optional": true},
+    {"id": "verify_authority", "description": "Verify authority state is readable and audit intact",
+     "command": ["bash", "-c", "test -f \"$HOME/.hermes/authority/state.json\" && wc -l \"$HOME/.hermes/authority/audit.jsonl\""]}
+  ]
+}
