@@ -2,6 +2,7 @@
 from typing import Any
 
 from hermes_authority import HermesAuthority
+from hermes_attention_gate import Capability, decide
 from hermes_macos_adapter import MacAuthorityAdapter
 
 
@@ -20,6 +21,18 @@ class HermesMachineTools:
         s = self.authority.current()
         return _ok(mode=s.mode, principal=s.principal,
                    entered_at=s.entered_at, reason=s.reason)
+
+    def attention_gate(self, capabilities=None, human_required=False, irreversible=False,
+                       physical_required=False, values_required=False, attempted_routes=None):
+        caps = [Capability(**c) for c in (capabilities or [])]
+        d = decide(capabilities=caps, human_required=human_required,
+                   irreversible=irreversible, physical_required=physical_required,
+                   values_required=values_required,
+                   attempted_routes=tuple(attempted_routes or ()))
+        self.authority.audit("attention_gate", target=d.route or "human",
+                             result=d.decision.value,
+                             detail={"reason": d.reason, "attempted_routes": attempted_routes or []})
+        return _ok(decision=d.decision.value, route=d.route, reason=d.reason)
 
     def authority_enter(self, mode, *, principal, reason="", human_authorized=False):
         s = self.authority.enter(mode, principal=principal, reason=reason,
@@ -47,6 +60,17 @@ def register_tools(server, tools=None):
                  description="Read Hermes local machine-authority mode. Independent of GOMS.")
     def hermes_authority_status() -> dict[str, Any]:
         return surface.authority_status()
+
+    @server.tool(structured_output=True,
+                 description="Mandatory pre-escalation gate. Before asking the human to perform mechanical work, enumerate available authorized capability routes here. ACT/RECOVER means Hermes must continue itself; ESCALATE permits a human question only for the returned reason.")
+    def hermes_attention_gate(capabilities: list[dict[str, Any]] | None = None,
+                              human_required: bool = False,
+                              irreversible: bool = False,
+                              physical_required: bool = False,
+                              values_required: bool = False,
+                              attempted_routes: list[str] | None = None) -> dict[str, Any]:
+        return surface.attention_gate(capabilities, human_required, irreversible,
+                                      physical_required, values_required, attempted_routes)
 
     @server.tool(structured_output=True,
                  description="Enter a Hermes authority mode. Elevation requires explicit human authorization.")

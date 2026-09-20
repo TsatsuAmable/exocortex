@@ -44,5 +44,14 @@ class HermesMachineToolsTests(unittest.TestCase):
         self.assertEqual(self.adapter.calls[-1], ("user", ["printf", "hello"]))
 
 
+    def test_attention_gate_exposes_act_route(self):
+        result = self.tools.attention_gate([{"name": "machine_run"}])
+        self.assertEqual(result["decision"], "ACT")
+        self.assertEqual(result["route"], "machine_run")
+
+    def test_attention_gate_escalates_real_human_boundary(self):
+        result = self.tools.attention_gate([{"name": "machine_run"}], human_required=True)
+        self.assertEqual(result["decision"], "ESCALATE")
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
