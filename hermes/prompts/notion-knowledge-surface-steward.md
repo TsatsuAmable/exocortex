@@ -41,3 +41,9 @@ Escalate only if:
 - reconciliation would require destroying unresolved human-authored content.
 
 Do not create duplicate dashboards, databases, or project authorities.
+
+## Tool discipline
+
+For this bound-page stewardship loop, use direct Notion page fetch/update operations on the known projection page and cockpit page. Do not use query_data_sources unless a future task genuinely requires a database query. The two governed pages already have stable IDs and can be inspected directly.
+
+If a database query is later required, first fetch the data source schema and then use the exact current query_data_sources contract. Never retry an identical validation failure.
