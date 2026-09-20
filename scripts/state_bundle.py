@@ -63,26 +63,37 @@ def load_exclusions():
     return tuple(names)
 
 
+def is_sqlite_sidecar(name: str) -> bool:
+    return name.endswith(("-wal", "-shm", "-journal"))
+
+
 def item_files(root: Path, excludes):
     for base, dirnames, filenames in os.walk(root, followlinks=False):
         dirnames[:] = sorted(d for d in dirnames if d not in excludes)
         for name in sorted(filenames):
-            if name not in excludes:
+            if name not in excludes and not is_sqlite_sidecar(name):
                 yield Path(base) / name
 
 
 def collect(items):
     excludes = load_exclusions()
     out = []
+    skipped_specials = []
     for name, root in items:
         root = Path(root).expanduser()
         if not root.exists():
             sys.stderr.write(f"warning: {name} root missing: {root}\n")
             continue
         for path in item_files(root, excludes):
+            if not path.is_file():
+                # Sockets/FIFOs/devices cannot be streamed into an archive;
+                # record them so nothing is silently dropped.
+                skipped_specials.append(
+                    {"item": name, "path": path.relative_to(root).as_posix()})
+                continue
             rel = path.relative_to(root).as_posix()
             out.append((name, rel, path))
-    return out
+    return out, skipped_specials
 
 
 def git_commit(repo: Path | None) -> str | None:
@@ -112,6 +123,19 @@ def openssl_decrypt(bundle: Path, tar_path: Path, env_file: Path) -> None:
     subprocess.run(cmd, check=True)
 
 
+def _stage_ignore(directory, names):
+    ignored = list(shutil.ignore_patterns(*load_exclusions())(directory, names))
+    for entry in names:
+        if entry in ignored:
+            continue
+        entry_path = Path(directory) / entry
+        if entry_path.is_dir():
+            continue
+        if not entry_path.is_file() or is_sqlite_sidecar(entry):
+            ignored.append(entry)
+    return ignored
+
+
 def cmd_create(args):
     items = [(name, path) for name, path in (a.split("=", 1) for a in args.item)] \
         if args.item else DEFAULT_ITEMS
@@ -120,21 +144,9 @@ def cmd_create(args):
     else:
         commit = git_commit(Path(__file__).resolve().parent.parent)
 
-    entries = collect(items)
+    entries, skipped_specials = collect(items)
     roots = {name: str(Path(root).expanduser()) for name, root in items}
-    manifest = {
-        "schema_version": SCHEMA_VERSION,
-        "created_at": utc_now(),
-        "git_commit": commit,
-        "host": args.host or os.uname().nodename,
-        "restore_order": [name for name, _root in items],
-        "items": [
-            {"name": name, "root": roots[name],
-             "path": rel, "sha256": sha256_file(path), "bytes": path.stat().st_size}
-            for name, rel, path in entries
-        ],
-    }
-    if not manifest["items"]:
+    if not entries:
         sys.exit("error: no state files found; nothing to bundle")
 
     workdir = Path(tempfile.mkdtemp(prefix="statebundle-"))
@@ -148,10 +160,26 @@ def cmd_create(args):
             dest.parent.mkdir(parents=True, exist_ok=True)
             if src.is_dir():
                 shutil.copytree(src, dest, symlinks=False,
-                                ignore=shutil.ignore_patterns(*load_exclusions()))
+                                ignore=_stage_ignore)
             else:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dest)
+        # Hash the staged copies, not the live sources: the manifest must
+        # describe exactly the bytes that are archived and verified later.
+        manifest = {
+            "schema_version": SCHEMA_VERSION,
+            "created_at": utc_now(),
+            "git_commit": commit,
+            "host": args.host or os.uname().nodename,
+            "restore_order": [name for name, _root in items],
+            "skipped_specials": skipped_specials,
+            "items": [
+                {"name": name, "root": roots[name], "path": rel,
+                 "sha256": sha256_file(staged / name / rel),
+                 "bytes": (staged / name / rel).stat().st_size}
+                for name, rel, path in entries
+            ],
+        }
         (staged / "manifest.json").write_text(
             json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
         tar_path = workdir / "payload.tar"
@@ -170,6 +198,7 @@ def cmd_create(args):
         "host": manifest["host"],
         "items": len(manifest["items"]),
         "files": len(entries),
+        "skipped_specials": len(skipped_specials),
         "created_at": manifest["created_at"],
     }
     print(json.dumps(summary, indent=2))

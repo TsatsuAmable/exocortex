@@ -71,6 +71,51 @@ class StateBundleTests(unittest.TestCase):
             (dest / "hermes_authority" / "state.json").read_text(),
             '{"mode":"OBSERVE"}\n')
 
+    def test_create_excludes_sqlite_sidecars(self):
+        (self.item_a / "state.db-wal").write_bytes(b"WAL-BYTES")
+        (self.item_a / "state.db-shm").write_bytes(b"SHM-BYTES")
+        try:
+            summary = json.loads(run([
+                "create", "--output", str(self.bundle),
+                "--passfile", str(self.passfile),
+                "--item", f"goms_root={self.item_a}",
+                "--item", f"hermes_authority={self.item_b}",
+                "--host", "test-host", "--git-commit", "deadbeef",
+            ]).stdout)
+            self.assertEqual(summary["files"], 4)
+            verify = json.loads(run([
+                "verify", "--bundle", str(self.bundle),
+                "--passfile", str(self.passfile),
+            ]).stdout)
+            self.assertTrue(verify["ok"])
+        finally:
+            (self.item_a / "state.db-wal").unlink(missing_ok=True)
+            (self.item_a / "state.db-shm").unlink(missing_ok=True)
+
+    def test_create_skips_unstreamable_special_files(self):
+        import socket as _socket
+        sock_path = self.item_a / "gateway.sock"
+        sock = _socket.socket(_socket.AF_UNIX)
+        sock.bind(str(sock_path))
+        try:
+            summary = json.loads(run([
+                "create", "--output", str(self.bundle),
+                "--passfile", str(self.passfile),
+                "--item", f"goms_root={self.item_a}",
+                "--item", f"hermes_authority={self.item_b}",
+                "--host", "test-host", "--git-commit", "deadbeef",
+            ]).stdout)
+            self.assertEqual(summary["files"], 4)
+            self.assertEqual(summary["skipped_specials"], 1)
+            verify = json.loads(run([
+                "verify", "--bundle", str(self.bundle),
+                "--passfile", str(self.passfile),
+            ]).stdout)
+            self.assertTrue(verify["ok"])
+        finally:
+            sock.close()
+            sock_path.unlink(missing_ok=True)
+
     def test_verify_detects_tampering(self):
         run(["create", "--output", str(self.bundle), "--passfile", str(self.passfile),
              "--item", f"goms_root={self.item_a}"])
