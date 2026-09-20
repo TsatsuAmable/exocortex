@@ -44,6 +44,13 @@ class HermesMachineToolsTests(unittest.TestCase):
         self.assertEqual(self.adapter.calls[-1], ("user", ["printf", "hello"]))
 
 
+    def test_capability_graph_discovers_operate_routes(self):
+        self.auth.enter("OPERATE", principal="user", human_authorized=True)
+        result = self.tools.capability_graph()
+        names = {x["name"] for x in result["capabilities"]}
+        self.assertIn("machine_run", names)
+        self.assertNotIn("machine_recovery", names)
+
     def test_attention_gate_exposes_act_route(self):
         result = self.tools.attention_gate([{"name": "machine_run"}])
         self.assertEqual(result["decision"], "ACT")

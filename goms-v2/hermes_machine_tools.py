@@ -3,6 +3,7 @@ from typing import Any
 
 from hermes_authority import HermesAuthority
 from hermes_attention_gate import Capability, decide
+from hermes_capability_graph import HermesCapabilityGraph
 from hermes_macos_adapter import MacAuthorityAdapter
 
 
@@ -21,6 +22,10 @@ class HermesMachineTools:
         s = self.authority.current()
         return _ok(mode=s.mode, principal=s.principal,
                    entered_at=s.entered_at, reason=s.reason)
+
+    def capability_graph(self, kind=None):
+        graph = HermesCapabilityGraph(self.authority)
+        return _ok(capabilities=graph.candidates(kind), inventory=graph.discover())
 
     def attention_gate(self, capabilities=None, human_required=False, irreversible=False,
                        physical_required=False, values_required=False, attempted_routes=None):
@@ -60,6 +65,11 @@ def register_tools(server, tools=None):
                  description="Read Hermes local machine-authority mode. Independent of GOMS.")
     def hermes_authority_status() -> dict[str, Any]:
         return surface.authority_status()
+
+    @server.tool(structured_output=True,
+                 description="Discover Hermes runtime capability graph with current authority and health. Use before the attention gate so escalation is based on discovered executable routes, not assumptions.")
+    def hermes_capability_graph(kind: str | None = None) -> dict[str, Any]:
+        return surface.capability_graph(kind)
 
     @server.tool(structured_output=True,
                  description="Mandatory pre-escalation gate. Before asking the human to perform mechanical work, enumerate available authorized capability routes here. ACT/RECOVER means Hermes must continue itself; ESCALATE permits a human question only for the returned reason.")
