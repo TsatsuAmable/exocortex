@@ -190,6 +190,21 @@
       ]
     },
     {
+      "label": "org.aineko.exocortex-survivability-audit",
+      "role": "Daily Exocortex reconstruction/survivability contract audit",
+      "start_interval_seconds": 86400,
+      "command": [
+        "python3",
+        "$EXOCORTEX_CURRENT/survivability/survivability_audit.py",
+        "--release",
+        "$EXOCORTEX_CURRENT",
+        "--goms-home",
+        "$GOMS_HOME",
+        "--report",
+        "$GOMS_HOME/survivability/latest.json"
+      ]
+    },
+    {
       "label": "com.aineko.delivery-controller",
       "role": "Durable software delivery controller tick",
       "run_at_load": true,
