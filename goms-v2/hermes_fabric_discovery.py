@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import json, shutil, subprocess, urllib.request
+import os, json, shutil, subprocess, urllib.request
 
 def _cmd_ok(argv, timeout=3):
     try:
@@ -8,9 +8,10 @@ def _cmd_ok(argv, timeout=3):
     except (OSError, subprocess.SubprocessError):
         return False
 
-def _http_ok(url, timeout=2):
+def _http_ok(url, timeout=2, headers=None):
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as r:
+        req = urllib.request.Request(url, headers=headers or {})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             return 200 <= r.status < 500
     except Exception:
         return False
@@ -18,10 +19,12 @@ def _http_ok(url, timeout=2):
 def discover_fabric():
     """Best-effort live routes. Absence is data, never an exception."""
     routes=[]
-    # Remote Commander is configured locally and health is independently probed.
-    rc_configured = _http_ok("http://127.0.0.1:8771/", timeout=1)
+    # Remote Commander requires the same bearer credential used by Hermes MCP config.
+    token = os.environ.get("MCP_REMOTE_COMMANDER_API_KEY", "").strip()
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    rc_healthy = bool(token) and _http_ok("http://127.0.0.1:8771/mcp", timeout=1, headers=headers)
     routes.append({"name":"remote_commander","kind":"remote_execution",
-                   "available":rc_configured,"authorized":True,"healthy":rc_configured,
+                   "available":bool(token),"authorized":True,"healthy":rc_healthy,
                    "required_mode":"OPERATE"})
     tailscale = shutil.which("tailscale") or "/usr/local/bin/tailscale"
     ts_ok = _cmd_ok([tailscale, "status"], 3)

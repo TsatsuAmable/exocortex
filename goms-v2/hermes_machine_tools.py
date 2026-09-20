@@ -4,6 +4,7 @@ from typing import Any
 from hermes_authority import HermesAuthority
 from hermes_attention_gate import Capability, decide
 from hermes_capability_graph import HermesCapabilityGraph
+from hermes_route_selector import select_route
 from hermes_macos_adapter import MacAuthorityAdapter
 
 
@@ -26,6 +27,15 @@ class HermesMachineTools:
     def capability_graph(self, kind=None):
         graph = HermesCapabilityGraph(self.authority)
         return _ok(capabilities=graph.candidates(kind), inventory=graph.discover())
+
+    def select_route(self, task_kind="machine", attempted_routes=None):
+        graph = HermesCapabilityGraph(self.authority)
+        d = select_route(graph.discover(), task_kind, tuple(attempted_routes or ()))
+        self.authority.audit("route_select", target=d["route"] or "human",
+                             result=d["decision"],
+                             detail={"task_kind": task_kind, "reason": d["reason"],
+                                     "attempted_routes": attempted_routes or []})
+        return _ok(**d)
 
     def attention_gate(self, capabilities=None, human_required=False, irreversible=False,
                        physical_required=False, values_required=False, attempted_routes=None):
@@ -70,6 +80,12 @@ def register_tools(server, tools=None):
                  description="Discover Hermes runtime capability graph with current authority and health. Use before the attention gate so escalation is based on discovered executable routes, not assumptions.")
     def hermes_capability_graph(kind: str | None = None) -> dict[str, Any]:
         return surface.capability_graph(kind)
+
+    @server.tool(structured_output=True,
+                 description="Select the preferred healthy authorized Exocortex execution route. Pass failed routes in attempted_routes; Hermes must try the returned ACT/RECOVER route before escalating.")
+    def hermes_select_route(task_kind: str = "machine",
+                            attempted_routes: list[str] | None = None) -> dict[str, Any]:
+        return surface.select_route(task_kind, attempted_routes)
 
     @server.tool(structured_output=True,
                  description="Mandatory pre-escalation gate. Before asking the human to perform mechanical work, enumerate available authorized capability routes here. ACT/RECOVER means Hermes must continue itself; ESCALATE permits a human question only for the returned reason.")

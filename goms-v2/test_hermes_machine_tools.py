@@ -51,6 +51,11 @@ class HermesMachineToolsTests(unittest.TestCase):
         self.assertIn("machine_run", names)
         self.assertNotIn("machine_recovery", names)
 
+    def test_route_selector_prefers_local_machine(self):
+        self.auth.enter("OPERATE", principal="user", human_authorized=True)
+        result = self.tools.select_route("machine")
+        self.assertEqual(result["route"], "machine_run")
+
     def test_attention_gate_exposes_act_route(self):
         result = self.tools.attention_gate([{"name": "machine_run"}])
         self.assertEqual(result["decision"], "ACT")
