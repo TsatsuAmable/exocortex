@@ -1,0 +1,36 @@
+{
+  "failure_class": "distillation_workers_service_down",
+  "description": "Injected failure drill: org.aineko.goms-distillation-workers removed via launchctl bootout, then recovered via bootstrap + kickstart and verified running. Exercises the documented launchd recovery order end-to-end without touching the GOMS MCP server or the Hermes gateway.",
+  "steps": [
+    {
+      "id": "precondition_plist_present",
+      "description": "Guard: the LaunchAgent plist exists so recovery is possible; capture current service state as evidence",
+      "command": ["bash", "-c", "test -f \"$HOME/Library/LaunchAgents/org.aineko.goms-distillation-workers.plist\" && launchctl list | grep org.aineko.goms-distillation-workers"]
+    },
+    {
+      "id": "inject_bootout",
+      "description": "Failure injection: bootout the service; confirm absence (drill step must not fail the run)",
+      "command": ["bash", "-c", "launchctl bootout gui/$(id -u)/org.aineko.goms-distillation-workers 2>&1 || true; launchctl print gui/$(id -u)/org.aineko.goms-distillation-workers 2>&1 | head -2; true"]
+    },
+    {
+      "id": "confirm_service_removed",
+      "description": "Assert the service is genuinely gone before recovery (negated probe)",
+      "command": ["bash", "-c", "! launchctl print gui/$(id -u)/org.aineko.goms-distillation-workers >/dev/null 2>&1"]
+    },
+    {
+      "id": "recover_bootstrap",
+      "description": "Recovery: bootstrap the service back from its plist",
+      "command": ["bash", "-c", "launchctl bootstrap gui/$(id -u) \"$HOME/Library/LaunchAgents/org.aineko.goms-distillation-workers.plist\""]
+    },
+    {
+      "id": "recover_kickstart",
+      "description": "Recovery: force-start the bootstrapped service",
+      "command": ["bash", "-c", "launchctl kickstart -k gui/$(id -u)/org.aineko.goms-distillation-workers"]
+    },
+    {
+      "id": "verify_service_running",
+      "description": "Verification: service registered and holding a live pid",
+      "command": ["bash", "-c", "sleep 2; launchctl print gui/$(id -u)/org.aineko.goms-distillation-workers | grep -q 'pid = ' && launchctl list | grep -q org.aineko.goms-distillation-workers"]
+    }
+  ]
+}

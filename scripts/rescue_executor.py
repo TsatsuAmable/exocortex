@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 import sys
 import time
@@ -78,7 +79,12 @@ def completed_step_ids(path: Path) -> set:
 
 
 def run_argv(argv, timeout=120):
-    proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+    # Remote Commander environments may lack HOME; plans legitimately use $HOME.
+    # Inject it from Path.home() rather than trusting the ambient environment.
+    env = dict(os.environ)
+    env.setdefault("HOME", str(Path.home()))
+    proc = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
+                          env=env)
     return proc.returncode, proc.stdout, proc.stderr
 
 

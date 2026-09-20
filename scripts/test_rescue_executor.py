@@ -126,6 +126,19 @@ class RescueExecutorTests(unittest.TestCase):
         events = [rec["event"] for rec in self._journal()]
         self.assertEqual(events, [])
 
+    def test_run_argv_injects_home(self):
+        """Steps using $HOME work even when the ambient env lacks it."""
+        import os
+        from rescue_executor import run_argv
+        saved = os.environ.pop("HOME", None)
+        try:
+            rc, out, err = run_argv(["bash", "-c", "echo $HOME"])
+        finally:
+            if saved is not None:
+                os.environ["HOME"] = saved
+        self.assertEqual(rc, 0, err)
+        self.assertTrue(out.strip().startswith("/"), out)
+
     def test_status_reports_completed(self):
         self._enter_recovery()
         self._run()
