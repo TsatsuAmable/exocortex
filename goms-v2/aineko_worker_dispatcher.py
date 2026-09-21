@@ -81,6 +81,9 @@ def build_context_packet(service: ControlIntentService, intent: dict,
 def build_worker_prompt(packet: dict, max_tool_calls: int = DEFAULT_TOOL_CALLS) -> str:
     return (
         "You are a fresh bounded worker for GSV Aineko, not the long-lived governor.\n"
+        "The dispatcher has ALREADY claimed this intent for you. Use TASK_PACKET.execution "
+        "as your held execution lease. Do NOT call any intent claim/approve/dispatch tool and "
+        "do not interpret the intent's EXECUTING status as a competing worker.\n"
         f"Hard budget: at most {int(max_tool_calls)} tool calls. Do not search broad history, "
         "resume another session, or delegate recursively. Use only task-relevant state.\n"
         "Execute the approved intent end-to-end where authorized. Preserve rollback paths. "
@@ -168,7 +171,19 @@ def dispatch_once(root: Path, *, profile: str = "gsvaineko",
     intent = candidates[0]
     packet = build_context_packet(service, intent, max_chars=context_chars)
     worker_id = f"aineko-bounded:{socket.gethostname()}:{os.getpid()}"
+    # Reserve the exact-sized execution envelope BEFORE the durable claim so a
+    # packet-budget failure can never strand the intent in EXECUTING.
+    packet["execution"] = {
+        "attempt_id": "intent_attempt_000000000000",
+        "worker_id": worker_id,
+        "claim_status": "HELD_BY_DISPATCHER",
+        "do_not_claim": True,
+    }
+    packet["context_chars"] = _size(packet)
+    if packet["context_chars"] > context_chars:
+        raise ValueError("context_budget_exceeded_by_execution_envelope")
     attempt_id = service.claim_for_aineko(intent["id"], worker_id=worker_id)
+    packet["execution"]["attempt_id"] = attempt_id
     home = hermes_agent_home or Path(
         os.environ.get("HERMES_AGENT_HOME", "~/.hermes/hermes-agent")
     ).expanduser()
