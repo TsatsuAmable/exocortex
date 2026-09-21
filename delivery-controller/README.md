@@ -73,3 +73,5 @@ Repository policies may opt into autopilot. Authenticated GitHub events wake the
 ### Event ingress
 
 webhook.py accepts signed GitHub events at /github, validates X-Hub-Signature-256, deduplicates X-GitHub-Delivery, and immediately runs the repository autopilot. Configure GITHUB_WEBHOOK_SECRET outside source control. The scheduled tick is retained only as reconciliation/watchdog fallback.
+
+For a workstation deployment, run the webhook receiver on loopback and expose only that port/path through an authenticated/public ingress suitable for GitHub. Do not expose the delivery controller's other local services. The webhook secret is runtime-only and must not be committed or stored in GOMS.
