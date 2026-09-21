@@ -51,3 +51,14 @@ submit(..., idempotency_key, human_attested?) → NEEDS_DECISION (acknowledged_a
 - Unit: `goms-v2/test_aineko_dispatch.py` — submit, duplicate same payload (replay), duplicate different payload (reused error), status queryable, cancel before execution, cancel from APPROVED, cancel after EXECUTING rejected, claim single-worker boundary, HUMAN_ONLY not claimable, evidence creation, restart-resumable (reopen store), authority (no auto-approval without `human_attested`+`human:` actor), MCP surfaces, Manfred command ledger.
 - Existing suites: `test_control_intents`, `test_manfred_control`, `test_intent_execution`, `test_mcp_control_intents` (when `mcp` available) remain green.
 - Reconstruction: `python3 scripts/reconstruction_check.py` passes (no secret-bearing paths, required files present including this doc and schema).
+
+## Bounded worker execution
+- The long-lived Aineko gateway remains governor/router. `goms-v2/aineko_worker_dispatcher.py` drains only already-approved, non-HUMAN_ONLY intents.
+- Each execution is a fresh Hermes one-shot, never a resumed chat/session. The worker contract prohibits broad session-history lookup and recursive delegation.
+- The worker receives the approved intent plus a clipped project/person brief. Default task-packet ceiling is 28,000 JSON characters. Intent semantics are never silently truncated; oversized intents must be decomposed before claim.
+- Default worker guidance permits at most 12 tool calls and 900 seconds. These are deployment-configurable without changing authority.
+- Worker-reported SUCCESS is downgraded to UNKNOWN unless it includes explicit real-outcome verification and evidence. Timeouts and non-zero exits become OUTCOME_UNKNOWN because side effects may already have occurred.
+- `scripts/submit_scheduled_intent.py` turns declarative task specs into idempotent approved intents without invoking an LLM. Scheduler runs therefore inherit no Aineko conversation history.
+- `org.aineko.intent-worker` is generated from the existing service inventory. No new queue, database, or orchestration authority is introduced.
+
+Verification: `goms-v2/test_aineko_worker_dispatcher.py` covers bounded packets, no silent task truncation, verified success, and automatic downgrade of unverified success.
