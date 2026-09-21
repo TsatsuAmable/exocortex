@@ -35,7 +35,9 @@ Reference root:
 
 `~/Library/Application Support/Aineko/GOMS`
 
-Important continuity files include `goms.sqlite3`, `events.jsonl`, ingestion/queue state needed for exact operational resume, migration/version metadata, and generated evidence that cannot be regenerated cheaply.
+Important continuity files include `goms.sqlite3`, the hot `events.jsonl` segment, ingestion/queue state needed for exact operational resume, migration/version metadata, authority state, and selected Hermes continuity.
+
+Raw evidence, historical deployment snapshots, rotated ledger archives, and other cold material are a separate archive tier. They are intentionally excluded from the routine encrypted hot-continuity bundle by `.statebundle-ignore`; unique evidence must instead be preserved by the archive backup policy and is never deleted merely because it is old.
 
 Neo4j is not canonical if it can be rebuilt from GOMS.
 

@@ -159,6 +159,23 @@
       }
     },
     {
+      "label": "org.aineko.goms-storage-governor",
+      "role": "Daily GOMS hot/warm/cold storage governance",
+      "start_interval_seconds": 86400,
+      "command": [
+        "<GOMS_VENV_PYTHON>",
+        "$EXOCORTEX_CURRENT/goms-v2/storage_governor.py",
+        "--root",
+        "$GOMS_HOME",
+        "--policy",
+        "$EXOCORTEX_CURRENT/goms-v2/storage_policy.json",
+        "scheduled",
+        "--state-dir",
+        "$GOMS_HOME/storage-governance",
+        "--enable-ledger-rotation"
+      ]
+    },
+    {
       "label": "org.aineko.goms-guardian",
       "role": "Daily guardian packet/review",
       "start_interval_seconds": 86400,

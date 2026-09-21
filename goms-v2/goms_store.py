@@ -116,14 +116,19 @@ class GomsStore:
         event = dict(event)
         event.setdefault("event_id", make_id("event"))
         event.setdefault("at", now())
-        with self.ledger.open("a+", encoding="utf-8") as f:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-            prev = _last_line_hash(self.ledger)
-            event["prev_line_sha256"] = prev
-            event["event_sha256"] = hashlib.sha256(_canonical_bytes(event)).hexdigest()
-            f.write(json.dumps(event, sort_keys=True, ensure_ascii=False) + "\n")
-            f.flush(); os.fsync(f.fileno())
-            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        # Use a stable lock inode rather than locking the ledger file itself.
+        # This allows storage-governance rotation to replace events.jsonl
+        # atomically without a writer holding a descriptor to the old inode.
+        lock_path = self.root / "events.lock"
+        with lock_path.open("a+") as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            with self.ledger.open("a+", encoding="utf-8") as f:
+                prev = _last_line_hash(self.ledger)
+                event["prev_line_sha256"] = prev
+                event["event_sha256"] = hashlib.sha256(_canonical_bytes(event)).hexdigest()
+                f.write(json.dumps(event, sort_keys=True, ensure_ascii=False) + "\n")
+                f.flush(); os.fsync(f.fileno())
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
         return event
 
     def add_entity(self, entity_type, title, summary="", project=None, status=None,
