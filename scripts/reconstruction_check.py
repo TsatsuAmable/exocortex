@@ -24,6 +24,7 @@ REQUIRED = [
     "goms-v2/control_intents.py",
     "goms-v2/aineko_worker_dispatcher.py",
     "scripts/submit_scheduled_intent.py",
+    "scripts/install_bounded_cron_jobs.py",
     "config/scheduled-intents/global-opportunity-scan.json",
     "config/scheduled-intents/exocortex-self-improvement.json",
     "goms-v2/storage_governor.py",
