@@ -3,9 +3,27 @@
   "repository": "TsatsuAmable/exocortex",
   "autopilot_enabled": true,
   "auto_merge": true,
-  "allowed_base_branches": ["main"],
+  "allowed_base_branches": [
+    "main"
+  ],
   "max_repair_attempts": 3,
-  "escalate_on": ["architecture", "intent", "authority", "security", "repeated_failure"],
-  "blocked_paths": [".github", "SECURITY.md"],
-  "local_verification": ["python scripts/reconstruction_check.py", "python -m unittest -q test_exocortex_deploy.py", "python compute/model-routing/test_router.py"]
+  "escalate_on": [
+    "architecture",
+    "intent",
+    "authority",
+    "security",
+    "repeated_failure"
+  ],
+  "blocked_paths": [
+    ".github",
+    "SECURITY.md"
+  ],
+  "local_verification": [
+    "python scripts/reconstruction_check.py",
+    "python -m unittest -q test_exocortex_deploy.py",
+    "python compute/model-routing/test_router.py"
+  ],
+  "auto_repair": true,
+  "source_path": "/Users/tsatsuamable/Documents/aineko-infrastructure",
+  "repair_timeout_seconds": 1200
 }

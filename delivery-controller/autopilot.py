@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Policy-bounded PR shepherd: discover, classify, remediate hooks, and merge."""
 from __future__ import annotations
-import argparse, json, subprocess
+import argparse, json, os, shutil, subprocess, tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -53,6 +53,35 @@ def classify(repo,pr):
     if (pr.get('mergeStateStatus') or '').upper() in {'DIRTY','BEHIND'}: return 'RECONCILE',[]
     return 'MERGE_READY',[]
 
+def repair(repo,pr,p):
+    if not p.get("auto_repair",False): return "repair policy disabled"
+    source=Path(p.get("source_path","")).expanduser()
+    if not source.is_dir(): return "repair source unavailable"
+    codex=shutil.which("codex")
+    if not codex: return "repair worker unavailable"
+    root=Path(os.environ.get("AINEKO_REPAIR_ROOT",Path.home()/"Library/Application Support/Aineko/repair-worktrees"))
+    root.mkdir(parents=True,exist_ok=True)
+    wt=root/f"{repo.replace('/','__')}-pr-{pr['number']}"
+    if wt.exists(): subprocess.run(["git","-C",str(source),"worktree","remove","--force",str(wt)],capture_output=True)
+    run(["git","-C",str(source),"fetch","origin",pr["headRefName"]],timeout=180)
+    run(["git","-C",str(source),"worktree","add","--detach",str(wt),pr["headRefOid"]],timeout=180)
+    prompt=f"""Repair PR #{pr['number']} in {repo}. Diagnose the current CI/review failure, make the smallest safe code fix in this worktree, and run relevant local tests. Do not change blocked governance/security paths, do not push, merge, or alter GitHub settings. Leave verified edits in the worktree. If the failure is infrastructure-only or requires architecture/intent/security judgment, make no edits and explain why."""
+    cp=subprocess.run([codex,"exec","-s","workspace-write","-a","never","-C",str(wt),prompt],text=True,capture_output=True,timeout=int(p.get("repair_timeout_seconds",1200)))
+    if cp.returncode: return "repair worker failed"
+    changed=run(["git","diff","--name-only"],timeout=60,check=False) if False else subprocess.run(["git","diff","--name-only"],cwd=wt,text=True,capture_output=True).stdout.splitlines()
+    blocked=[x.rstrip('/') for x in p.get('blocked_paths',[])]
+    if any(path==b or path.startswith(b+'/') for path in changed for b in blocked): return "repair blocked by path policy"
+    if not changed: return "repair produced no code change"
+    for command in p.get('local_verification',[]):
+        vc=subprocess.run(command,shell=True,cwd=wt,text=True,capture_output=True,timeout=int(p.get('repair_timeout_seconds',1200)))
+        if vc.returncode: return "repair verification failed"
+    current=json.loads(run(['gh','pr','view',str(pr['number']),'-R',repo,'--json','headRefOid']).stdout)
+    if current['headRefOid']!=pr['headRefOid']: return "repair abandoned: PR head moved"
+    subprocess.run(['git','add','--',*changed],cwd=wt,check=True)
+    subprocess.run(['git','commit','-m',f"fix: autonomously remediate PR #{pr['number']}"],cwd=wt,check=True)
+    subprocess.run(['git','push','origin',f"HEAD:refs/heads/{pr['headRefName']}"],cwd=wt,check=True,timeout=180)
+    return "repair pushed; awaiting GitHub event"
+
 def merge(repo,pr,p):
     if not p.get('auto_merge',False): return 'merge policy disabled'
     if (pr.get('baseRefName') or '') not in p.get('allowed_base_branches',['main']): return 'base branch not allowed'
@@ -70,7 +99,7 @@ def tick(repo,dry_run=False):
         if state=='MERGE_READY' and p.get('auto_merge') and not dry_run:
             action=merge(repo,pr,p)
         elif state in {'CODE_FAILURE','RECONCILE','REVIEW_REQUIRED'}:
-            action='enqueue-remediation'
+            action=repair(repo,pr,p) if not dry_run else 'enqueue-remediation'
         elif state=='INFRA_FAILURE': action='suppress-human-interrupt; verify locally before policy merge'
         out.append({'repo':repo,'pr':pr['number'],'title':pr['title'],'state':state,'detail':detail,'action':action,'url':pr['url']})
     return out
