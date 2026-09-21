@@ -56,6 +56,24 @@
         "-q",
         "test_survivability_audit.py"
       ]
+    },
+    "runtime_scripts": {
+      "source": "scripts",
+      "install": "scripts",
+      "entrypoint": "submit_scheduled_intent.py",
+      "health": []
+    },
+    "scheduled_intents": {
+      "source": "config/scheduled-intents",
+      "install": "config/scheduled-intents",
+      "entrypoint": "exocortex-self-improvement.json",
+      "health": []
+    },
+    "service_deploy": {
+      "source": "deploy",
+      "install": "deploy",
+      "entrypoint": "launchd/service-inventory.example.json",
+      "health": []
     }
   },
   "external_dependencies": {
