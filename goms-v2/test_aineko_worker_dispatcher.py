@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from aineko_worker_dispatcher import build_context_packet, dispatch_once
+from aineko_worker_dispatcher import build_context_packet, dispatch_once, run_worker
 from control_intents import ControlIntentService
 from goms_store import GomsStore
 
@@ -69,6 +69,24 @@ class BoundedWorkerTests(unittest.TestCase):
         self.assertEqual(intent["status"], "OUTCOME_UNKNOWN")
         self.assertEqual(intent["outcome"]["result"]["success_downgraded"],
                          "missing_verification")
+
+    def test_worker_uses_native_hard_turn_cap(self):
+        home = self.root / "hermes-agent"
+        python = home / "venv" / "bin" / "python"
+        python.parent.mkdir(parents=True)
+        python.write_text("")
+        packet = {"intent": {"id": "intent_test"}, "execution": {"do_not_claim": True}}
+        completed = __import__("subprocess").CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps({
+                "status": "SUCCESS", "result": {},
+                "verification": {"performed": True, "evidence": "ok"},
+                "evidence_title": "ok", "evidence_summary": "ok"}), stderr="")
+        with patch("aineko_worker_dispatcher.subprocess.run", return_value=completed) as proc:
+            run_worker(packet, profile="gsvaineko", timeout_seconds=30,
+                       max_tool_calls=7, hermes_agent_home=home)
+        argv = proc.call_args.args[0]
+        idx = argv.index("--max-turns")
+        self.assertEqual(argv[idx + 1], "7")
 
     def test_worker_receives_existing_claim_and_must_not_reclaim(self):
         intent_id = self.approved()

@@ -84,8 +84,9 @@ def build_worker_prompt(packet: dict, max_tool_calls: int = DEFAULT_TOOL_CALLS) 
         "The dispatcher has ALREADY claimed this intent for you. Use TASK_PACKET.execution "
         "as your held execution lease. Do NOT call any intent claim/approve/dispatch tool and "
         "do not interpret the intent's EXECUTING status as a competing worker.\n"
-        f"Hard budget: at most {int(max_tool_calls)} tool calls. Do not search broad history, "
-        "resume another session, or delegate recursively. Use only task-relevant state.\n"
+        f"Hard budget: at most {int(max_tool_calls)} model/tool rounds (enforced by Hermes). "
+        "Do not search broad history, resume another session, or delegate recursively. "
+        "Use only task-relevant state.\n"
         "Execute the approved intent end-to-end where authorized. Preserve rollback paths. "
         "Never report SUCCESS from command exit alone: verify the real outcome by test, "
         "read-back, live check, or equivalent evidence.\n"
@@ -125,7 +126,8 @@ def run_worker(packet: dict, *, profile: str, timeout_seconds: int,
     try:
         proc = subprocess.run(
             [str(python), "-m", "hermes_cli.main", "--profile", profile,
-             "--ignore-rules", "--usage-file", usage_name, "--oneshot",
+             "--ignore-rules", "--max-turns", str(int(max_tool_calls)),
+             "--usage-file", usage_name, "--oneshot",
              build_worker_prompt(packet, max_tool_calls)],
             cwd=str(hermes_agent_home), text=True, capture_output=True,
             timeout=max(30, int(timeout_seconds)), env=os.environ.copy(),
