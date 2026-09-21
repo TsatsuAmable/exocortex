@@ -68,4 +68,8 @@ Only after observation shows value:
 
 ## PR autopilot
 
-Repository policies may opt into autopilot. The periodic controller discovers open PRs, distinguishes pending, code/review/reconciliation, and zero-step infrastructure failures, and may merge a clean PR only when repository policy explicitly grants it. Ambiguous or consequential repairs remain escalation points.
+Repository policies may opt into autopilot. Authenticated GitHub events wake the controller to discover open PRs, distinguishes pending, code/review/reconciliation, and zero-step infrastructure failures, and may merge a clean PR only when repository policy explicitly grants it. Ambiguous or consequential repairs remain escalation points.
+
+### Event ingress
+
+webhook.py accepts signed GitHub events at /github, validates X-Hub-Signature-256, deduplicates X-GitHub-Delivery, and immediately runs the repository autopilot. Configure GITHUB_WEBHOOK_SECRET outside source control. The scheduled tick is retained only as reconciliation/watchdog fallback.

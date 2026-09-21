@@ -82,9 +82,9 @@ Each job records:
 
 Start at Level 0–2. Increase authority by change class only after telemetry establishes an acceptable intervention, escaped-defect and rollback rate.
 
-## Why polling is acceptable initially
+## Event-driven delivery supervision
 
-A five-minute local scheduler is enough for a developer/workstation deployment. It checks external state and exits immediately if nothing changed. Webhooks can replace or supplement polling later without changing the controller model.
+GitHub webhooks are the primary trigger for PR supervision. Authenticated, deduplicated events wake the durable controller immediately. Periodic polling remains only a low-frequency reconciliation/watchdog path for missed events and recovery, never the primary control loop.
 
 ## Security boundary
 
