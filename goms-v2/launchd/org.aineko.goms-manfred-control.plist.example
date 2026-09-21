@@ -5,6 +5,7 @@
 <key>ProgramArguments</key><array><string>${HOME}/Library/Application Support/Aineko/GOMS/start_manfred_control.sh</string></array>
 <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
 <key>ThrottleInterval</key><integer>5</integer>
+<key>EnvironmentVariables</key><dict><key>GOMS_ATTENTION_MARKET_MODE</key><string>shadow</string></dict>
 <key>StandardOutPath</key><string>${HOME}/Library/Logs/Aineko/goms-manfred-control.log</string>
 <key>StandardErrorPath</key><string>${HOME}/Library/Logs/Aineko/goms-manfred-control.err.log</string>
 </dict></plist>

@@ -76,10 +76,25 @@ This claim should be tested periodically by clean-room reconstruction rather tha
 The reconstruction workflow is committed under `.github/workflows/reconstruction.yml`.
 On 2026-09-20 GitHub-hosted jobs for this private repository were blocked before runner startup by the account billing/spending state. This is an infrastructure/account condition, not a test failure.
 
-Until that external condition is cleared, run `scripts/verify_reconstruction.sh` locally. The same reconstruction tests were green locally before publication, and the feature branch `feat/hermes-goms-exocortex-20260917` is pushed to origin with all of the above.
+Until that external condition is cleared, run `scripts/verify_reconstruction.sh` locally. The same reconstruction tests were green locally before publication.
+
+## Attention Budget Market shadow experiment
+
+A shared A0–A3 attention classifier is implemented on the GOMS control-intent → alert path. Default mode is shadow: classifications are recorded without changing delivery. The first experiment targets 50 real candidate interruptions and reviews only classifier/outcome disagreements before any suppression is enabled.
+
+The canonical GOMS corpus contained fewer than 50 historical attention items when the experiment was introduced, so the system must accumulate real candidates rather than synthesize quota-filling examples.
+
 ## Knowledge surfaces (2026-09-21, branch `feat/exocortex-knowledge-surfaces-20260920`, PR #5)
 
 - Governed bidirectional GOMS <-> Notion wiring implemented (`goms-v2/notion_surface_sync.py` + `goms-v2/test_notion_surface_sync.py`), mirroring the Obsidian adapter contract: inbound-first order, evidence-with-diff CANDIDATE capture, digest-based change detection, no last-writer-wins.
 - Deployed steward `scripts/run_notion_surface_steward.sh` (hourly `org.aineko.goms-notion-sync`) with proactive token rotation (`scripts/refresh_notion_token.py`, 1h threshold) added to the wrapper and service inventory.
 - Live round trip verified: GOMS -> Notion ledger row -> bounded Notion edit -> provenance-bearing CANDIDATE evidence -> reconciliation path; idempotence gate passed (4 consecutive no-op passes against production GOMS state).
 - Sync-module test suite green (22/22). Full-discover failures in unrelated modules are pre-existing (Python 3.9 `str | None` syntax), proven by isolation.
+=======
+Until that external condition is cleared, run scripts/verify_reconstruction.sh locally. The same reconstruction tests were green locally before publication.
+
+## Attention Budget Market shadow experiment
+
+A shared A0–A3 attention classifier is implemented on the GOMS control-intent → alert path. Default mode is shadow: classifications are recorded without changing delivery. The first experiment targets 50 real candidate interruptions and reviews only classifier/outcome disagreements before any suppression is enabled.
+
+The canonical GOMS corpus contained fewer than 50 historical attention items when the experiment was introduced, so the system must accumulate real candidates rather than synthesize quota-filling examples.

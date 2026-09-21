@@ -20,6 +20,8 @@ REQUIRED = [
     "exocortex_deploy.py",
     "goms-v2/mcp_server.py",
     "goms-v2/schema.sql",
+    "goms-v2/attention_market.py",
+    "docs/goms/ATTENTION_BUDGET_MARKET.md",
     "compute/model-routing/router.py",
     "compute/model-routing/fleet.json",
     "hermes/SOUL.md",
