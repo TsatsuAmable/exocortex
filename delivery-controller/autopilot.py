@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Policy-bounded PR shepherd: discover, classify, remediate hooks, and merge."""
 from __future__ import annotations
-import argparse, json, subprocess
-from dataclasses import dataclass
+import argparse, hashlib, json, os, subprocess, sys
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parent
@@ -60,6 +59,55 @@ def merge(repo,pr,p):
     if cp.returncode: raise AutopilotError(cp.stderr.strip() or cp.stdout.strip())
     return 'merged'
 
+def _intent_service():
+    source=Path(os.environ.get('EXOCORTEX_CURRENT', str(Path.home()/'.local/share/exocortex/current')))/'goms-v2'
+    if not (source/'control_intents.py').exists():
+        source=ROOT.parent/'goms-v2'
+    if not (source/'control_intents.py').exists():
+        raise AutopilotError('control-intent runtime unavailable')
+    if str(source) not in sys.path:
+        sys.path.insert(0,str(source))
+    from control_intents import ControlIntentService
+    goms_root=Path(os.environ.get('GOMS_HOME', str(Path.home()/'Library/Application Support/Aineko/GOMS')))
+    return ControlIntentService(goms_root)
+
+def enqueue_remediation(repo,pr,state,detail,p):
+    authority_ref=str(p.get('standing_authority_ref') or '').strip()
+    if not p.get('repair_auto_dispatch') or not authority_ref:
+        return 'remediation-disabled'
+    head=str(pr.get('headRefOid') or '')
+    identity=f"{repo}:{pr['number']}:{head}:{state}"
+    key='pr-remediation:'+hashlib.sha256(identity.encode()).hexdigest()[:32]
+    target=f"{repo}#PR{pr['number']}"
+    summary=(
+        f"Exocortex delivery autopilot detected {state} on {target} at exact head {head}. "
+        f"Observed blockers: {', '.join(detail) if detail else 'none listed'}. "
+        "Repair the existing PR end-to-end under repository policy. Preserve governance and tests; "
+        "do not weaken checks or manufacture evidence. Push only to the existing PR branch, verify "
+        "the real outcome, and drive it back to the merge gate. If a genuinely human, physical, "
+        "security, legal, or authority-only boundary remains, return UNKNOWN with precise evidence."
+    )
+    service=_intent_service()
+    authority=service.get(authority_ref)
+    submission=((authority.get('provenance') or {}).get('submission') or {})
+    resolved_by=str(submission.get('resolved_by') or '')
+    if not submission.get('human_attested') or not resolved_by.startswith('human:'):
+        raise AutopilotError(f'standing authority {authority_ref} lacks human attestation')
+    if str(authority.get('status') or '') not in {'APPROVED','EXECUTING','VERIFYING','RESOLVED'}:
+        raise AutopilotError(f'standing authority {authority_ref} is not active/resolved')
+    result=service.submit_intent(
+        title=f"Repair {target}: {state}", summary=summary, kind='aineko_task',
+        source='system', source_ref=str(pr.get('url') or target), project=repo,
+        priority='P1', risk_tier='normal', execution_policy='AUTO_AFTER_APPROVAL',
+        recommended_action={'type':'aineko_task','target_id':target,'instructions':summary},
+        verification_policy={'exact_head':head,'same_pr':True,'require_real_outcome':True},
+        provenance={'standing_authority_ref':authority_ref,'detected_state':state},
+        decision_required=False, idempotency_key=key, actor='system:delivery-autopilot',
+        human_attested=True,
+        resolved_by=resolved_by,
+    )
+    return f"intent:{result['intent_id']}"
+
 def tick(repo,dry_run=False):
     p=policy(repo)
     if not p: return [{'repo':repo,'state':'UNMANAGED','detail':'no autopilot policy'}]
@@ -70,7 +118,7 @@ def tick(repo,dry_run=False):
         if state=='MERGE_READY' and p.get('auto_merge') and not dry_run:
             action=merge(repo,pr,p)
         elif state in {'CODE_FAILURE','RECONCILE','REVIEW_REQUIRED'}:
-            action='enqueue-remediation'
+            action='enqueue-remediation' if dry_run else enqueue_remediation(repo,pr,state,detail,p)
         elif state=='INFRA_FAILURE': action='suppress-human-interrupt; verify locally before policy merge'
         out.append({'repo':repo,'pr':pr['number'],'title':pr['title'],'state':state,'detail':detail,'action':action,'url':pr['url']})
     return out

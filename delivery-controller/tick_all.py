@@ -28,6 +28,7 @@ def run_bounded(command: list[str], timeout: int) -> int:
 
 exit_code = 0
 for command, timeout in [
+    ([sys.executable, str(ROOT / 'autopilot.py')], 90),
     ([sys.executable, str(ROOT / 'delivery.py'), 'tick'], 60),
     ([sys.executable, str(ROOT / 'nemosyne_continuous.py')], 240),
 ]:

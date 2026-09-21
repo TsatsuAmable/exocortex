@@ -1,0 +1,16 @@
+{
+  "name": "nemosyne-data-pr-write-v0.2",
+  "repository": "TsatsuAmable/nemosyne-data",
+  "autopilot_enabled": true,
+  "auto_merge": false,
+  "repair_auto_dispatch": true,
+  "standing_authority_ref": "intent_6b2b22ce86a2",
+  "standing_authority_resolved_by": "human:user",
+  "max_repair_attempts": 3,
+  "check_timeout_seconds": 600,
+  "blocked_paths": [
+    ".github",
+    "governance",
+    "AGENTS.md"
+  ]
+}
