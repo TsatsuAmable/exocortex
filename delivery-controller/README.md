@@ -65,3 +65,7 @@ Only after observation shows value:
 4. allow patch + push under `authority=pr`;
 5. keep merge/deploy as explicit policy gates;
 6. promote autonomy only from measured failure/rollback evidence.
+
+## PR autopilot
+
+Repository policies may opt into autopilot. The periodic controller discovers open PRs, distinguishes pending, code/review/reconciliation, and zero-step infrastructure failures, and may merge a clean PR only when repository policy explicitly grants it. Ambiguous or consequential repairs remain escalation points.
