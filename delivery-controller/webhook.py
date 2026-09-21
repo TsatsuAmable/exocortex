@@ -38,7 +38,7 @@ def handler(secret,db):
    return self.reply(200,{'ok':True,'result':result})
  return H
 def main():
- ap=argparse.ArgumentParser(); ap.add_argument('--host',default='127.0.0.1'); ap.add_argument('--port',type=int,default=8798); ap.add_argument('--db',type=Path,default=DB_PATH); a=ap.parse_args(); secret=os.environ.get('GITHUB_WEBHOOK_SECRET','').encode()
+ ap=argparse.ArgumentParser(); ap.add_argument('--host',default='127.0.0.1'); ap.add_argument('--port',type=int,default=8798); ap.add_argument('--db',type=Path,default=Path(os.environ.get('AINEKO_WEBHOOK_DB', str(DB_PATH.parent / 'github-events.sqlite3')))); a=ap.parse_args(); secret=os.environ.get('GITHUB_WEBHOOK_SECRET','').encode()
  if not secret: raise SystemExit('GITHUB_WEBHOOK_SECRET is required')
  ThreadingHTTPServer((a.host,a.port),handler(secret,a.db)).serve_forever()
 if __name__=='__main__': main()
