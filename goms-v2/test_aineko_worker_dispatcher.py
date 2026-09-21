@@ -70,6 +70,27 @@ class BoundedWorkerTests(unittest.TestCase):
         self.assertEqual(intent["outcome"]["result"]["success_downgraded"],
                          "missing_verification")
 
+    def test_worker_receives_existing_claim_and_must_not_reclaim(self):
+        intent_id = self.approved()
+        seen = {}
+
+        def fake_worker(packet, **kwargs):
+            seen.update(packet)
+            return ({
+                "status": "SUCCESS",
+                "result": {"done": True},
+                "verification": {"performed": True, "evidence": "verified"},
+                "evidence_title": "claim handoff",
+                "evidence_summary": "verified",
+            }, {})
+
+        with patch("aineko_worker_dispatcher.run_worker", side_effect=fake_worker):
+            dispatch_once(self.root, hermes_agent_home=Path("/unused"))
+        self.assertTrue(seen["execution"]["do_not_claim"])
+        self.assertEqual(seen["execution"]["claim_status"], "HELD_BY_DISPATCHER")
+        self.assertTrue(seen["execution"]["attempt_id"].startswith("intent_attempt_"))
+        self.assertEqual(self.svc.get(intent_id)["status"], "RESOLVED")
+
     def test_verified_success_resolves(self):
         intent_id = self.approved()
         fake = ({
