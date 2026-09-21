@@ -126,6 +126,39 @@
       ]
     },
     {
+      "label": "org.aineko.goms-obsidian-sync",
+      "role": "Governed GOMS to Obsidian projection and inbound candidate capture",
+      "start_interval_seconds": 900,
+      "command": [
+        "<GOMS_VENV_PYTHON>",
+        "$EXOCORTEX_CURRENT/goms-v2/knowledge_surface_sync.py",
+        "obsidian-sync",
+        "--root",
+        "$GOMS_HOME",
+        "--vault",
+        "$HOME/Projects/aineko-vault"
+      ],
+      "environment": {
+        "GOMS_HOME": "$GOMS_HOME"
+      }
+    },
+    {
+      "label": "org.aineko.goms-notion-sync",
+      "role": "Governed GOMS to Notion projection and inbound reconciliation steward",
+      "start_interval_seconds": 3600,
+      "command": [
+        "zsh",
+        "$EXOCORTEX_CURRENT/scripts/run_notion_surface_steward.sh"
+      ],
+      "environment": {
+        "HERMES_HOME": "$HERMES_HOME",
+        "NOTION_KNOWLEDGE_SURFACE_PAGE_ID": "<NOTION_KNOWLEDGE_SURFACE_PAGE_ID>",
+        "NOTION_COCKPIT_PAGE_ID": "<NOTION_COCKPIT_PAGE_ID>",
+        "NOTION_LEDGER_DATA_SOURCE_ID": "<NOTION_LEDGER_DATA_SOURCE_ID>",
+        "EXOCORTEX_CURRENT": "$EXOCORTEX_CURRENT"
+      }
+    },
+    {
       "label": "org.aineko.goms-storage-governor",
       "role": "Daily GOMS hot/warm/cold storage governance",
       "start_interval_seconds": 86400,

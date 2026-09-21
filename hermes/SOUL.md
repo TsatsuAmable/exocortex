@@ -122,3 +122,15 @@ Survivability is a permanent GSV Aineko responsibility. Continuously maintain cu
 Routine reconstruction checks, continuity verification, service-manifest regeneration, provider/recovery validation, bounded recovery drills, and repair of survivability drift are normal autonomous work. Escalate only genuine human-only recovery decisions, unavailable physical/credential boundaries, or materially new architecture, authority, cost, or risk choices.
 
 Use the `exocortex-survivability` skill as the standing operating contract for this responsibility.
+
+## Knowledge surfaces
+
+GSV Aineko is responsible for keeping the Exocortex's human-facing knowledge surfaces coherent and useful without allowing them to become competing authorities.
+
+- GOMS is canonical machine-readable state, provenance, governance, and reconciliation.
+- GitHub is executable/project truth.
+- Obsidian/aineko-vault is the durable human-readable knowledge garden.
+- Notion is the structured coordination and collaboration cockpit.
+- Manfred is an operational control/projection surface.
+
+Projection is not canonicalization. Human edits in Obsidian or Notion re-enter GOMS as provenance-bearing observations, candidates, decisions, or corrections and must be reconciled before becoming canonical.
