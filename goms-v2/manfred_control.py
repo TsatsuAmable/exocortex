@@ -114,7 +114,7 @@ class ManfredControl:
                      execution_conversation_id,execution_conversation_url,
                      verification_policy,outcome,updated_at
               FROM control_intents
-              WHERE status NOT IN ('RESOLVED','REJECTED','FAILED')
+              WHERE status NOT IN ('RESOLVED','REJECTED','FAILED','CANCELLED')
               ORDER BY CASE status WHEN 'NEEDS_DECISION' THEN 0 WHEN 'ESCALATED' THEN 1
                                    WHEN 'EXECUTING' THEN 2 WHEN 'VERIFYING' THEN 3
                                    WHEN 'APPROVED' THEN 4 ELSE 5 END,
@@ -224,6 +224,14 @@ class ManfredControl:
                 result = self._execute_intent_command(ctype, target, payload)
             elif ctype in {"mark_alert_delivered", "mark_alert_seen", "acknowledge_alert"}:
                 result = self._execute_alert_command(ctype, target, payload)
+            elif ctype == "submit_intent":
+                result = self._submit_aineko_intent(key, payload)
+            elif ctype == "cancel_intent":
+                result = self._cancel_aineko_intent(target, payload)
+            elif ctype == "aineko_claim_intent":
+                result = self._aineko_claim_intent(target, payload)
+            elif ctype == "aineko_complete_intent":
+                result = self._aineko_complete_intent(target, payload)
             else:
                 result = {"ok": False, "error": "unsupported_command"}
             if result.get("ok"):
@@ -441,3 +449,86 @@ class ManfredControl:
         )
         return {"ok": True, "type": "checkpoint_branch", "target_id": branch_id,
                 "checkpoint_id": checkpoint_id, "status": status}
+
+    def _submit_aineko_intent(self, idempotency_key: str, payload: dict) -> dict:
+        try:
+            title = str(payload.get("title") or "").strip()
+            if not title:
+                return {"ok": False, "error": "title_required"}
+            result = self.intents.submit_intent(
+                title=title,
+                summary=str(payload.get("summary") or ""),
+                kind=str(payload.get("kind") or "aineko_task"),
+                source=str(payload.get("source") or payload.get("actor") or "external"),
+                source_ref=payload.get("source_ref"),
+                project=payload.get("project"),
+                priority=str(payload.get("priority") or "P2"),
+                risk_tier=str(payload.get("risk_tier") or "normal"),
+                execution_policy=str(payload.get("execution_policy") or "HUMAN_ONLY"),
+                recommended_action=payload.get("recommended_action"),
+                alternatives=payload.get("alternatives"),
+                verification_policy=payload.get("verification_policy"),
+                provenance=payload.get("provenance"),
+                evidence_refs=payload.get("evidence_refs"),
+                decision_required=bool(payload.get("decision_required", True)),
+                idempotency_key=idempotency_key,
+                actor=str(payload.get("actor") or "external"),
+                human_attested=bool(payload.get("human_attested", False)),
+                resolved_by=payload.get("resolved_by"),
+                origin_conversation_id=payload.get("origin_conversation_id"),
+                origin_conversation_url=payload.get("origin_conversation_url"),
+                locator_source=str(payload.get("locator_source") or "unverified"),
+            )
+            return {"ok": True, "intent_id": result["intent_id"], "intent_status": result["intent"]["status"],
+                    "acknowledged": True, "replayed": result.get("replayed", False)}
+        except ValueError as exc:
+            msg = str(exc)
+            if msg == "idempotency_key_reused":
+                return {"ok": False, "error": "idempotency_key_reused"}
+            return {"ok": False, "error": msg}
+        except Exception:
+            return {"ok": False, "error": "command_failed"}
+
+    def _cancel_aineko_intent(self, intent_id: str, payload: dict) -> dict:
+        actor = str(payload.get("actor") or "").strip()
+        if not actor:
+            return {"ok": False, "error": "actor_required"}
+        reason = str(payload.get("reason") or "")
+        try:
+            intent = self.intents.cancel_intent(intent_id, actor, reason)
+            return {"ok": True, "intent_id": intent_id, "intent_status": intent["status"]}
+        except KeyError:
+            return {"ok": False, "error": "intent_not_found"}
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def _aineko_claim_intent(self, intent_id: str, payload: dict) -> dict:
+        worker_id = str(payload.get("worker_id") or payload.get("actor") or "").strip()
+        if not worker_id:
+            return {"ok": False, "error": "worker_required"}
+        action_type = str(payload.get("action_type") or "aineko_task")
+        target_id = str(payload.get("target_id") or intent_id)
+        try:
+            attempt_id = self.intents.claim_for_aineko(intent_id, worker_id, action_type, target_id)
+            return {"ok": True, "intent_id": intent_id, "execution_attempt_id": attempt_id, "intent_status": "EXECUTING"}
+        except KeyError:
+            return {"ok": False, "error": "intent_not_found"}
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}
+
+    def _aineko_complete_intent(self, intent_id: str, payload: dict) -> dict:
+        worker_id = str(payload.get("worker_id") or payload.get("actor") or "").strip()
+        attempt_id = str(payload.get("execution_attempt_id") or payload.get("attempt_id") or "").strip()
+        status = str(payload.get("status") or "SUCCESS").upper()
+        if not worker_id or not attempt_id:
+            return {"ok": False, "error": "worker_and_attempt_required"}
+        result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+        evidence_title = payload.get("evidence_title")
+        evidence_summary = payload.get("evidence_summary")
+        try:
+            intent = self.intents.record_aineko_result(intent_id, attempt_id, worker_id, status, result, evidence_title, evidence_summary)
+            return {"ok": True, "intent_id": intent_id, "intent_status": intent["status"], "execution_attempt_id": attempt_id}
+        except KeyError:
+            return {"ok": False, "error": "intent_not_found"}
+        except ValueError as exc:
+            return {"ok": False, "error": str(exc)}

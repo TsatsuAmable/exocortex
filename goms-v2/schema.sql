@@ -359,6 +359,16 @@ CREATE TABLE IF NOT EXISTS attention_control_intents (
 CREATE INDEX IF NOT EXISTS idx_attention_control_intents_intent
   ON attention_control_intents(intent_id);
 
+CREATE TABLE IF NOT EXISTS control_intent_submissions (
+  idempotency_key TEXT PRIMARY KEY,
+  intent_id TEXT NOT NULL UNIQUE REFERENCES control_intents(id),
+  fingerprint TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_control_intent_submissions_intent
+  ON control_intent_submissions(intent_id);
+
 CREATE TABLE IF NOT EXISTS attention_market_experiments (
   id TEXT PRIMARY KEY,
   mode TEXT NOT NULL DEFAULT 'shadow',
