@@ -53,6 +53,22 @@ def classify(repo,pr):
     if (pr.get('mergeStateStatus') or '').upper() in {'DIRTY','BEHIND'}: return 'RECONCILE',[]
     return 'MERGE_READY',[]
 
+def _attempt_key(repo,pr): return f"{repo}#{pr['number']}:{pr['headRefOid']}"
+
+def _load_attempts(root):
+    f=root/'repair-attempts.json'
+    try: return json.loads(f.read_text())
+    except Exception: return {}
+
+def _save_attempts(root,st): (root/'repair-attempts.json').write_text(json.dumps(st))
+
+def escalate(repo,pr,reason):
+    run(['gh','label','create','autopilot-escalated','-R',repo,'--force'],check=False)
+    run(['gh','pr','edit',str(pr['number']),'-R',repo,'--add-label','autopilot-escalated'],check=False)
+    run(['gh','pr','comment',str(pr['number']),'-R',repo,'--body',f"autopilot escalation ({reason}): bounded retries exhausted or policy block; human review required"],check=False)
+
+JUNK=('__pycache__/','.DS_Store','*.pyc')
+
 def repair(repo,pr,p):
     if not p.get("auto_repair",False): return "repair policy disabled"
     source=Path(p.get("source_path","")).expanduser()
@@ -66,9 +82,17 @@ def repair(repo,pr,p):
     run(["git","-C",str(source),"fetch","origin",pr["headRefName"]],timeout=180)
     run(["git","-C",str(source),"worktree","add","--detach",str(wt),pr["headRefOid"]],timeout=180)
     prompt=f"""Repair PR #{pr['number']} in {repo}. Diagnose the current CI/review failure, make the smallest safe code fix in this worktree, and run relevant local tests. Do not change blocked governance/security paths, do not push, merge, or alter GitHub settings. Leave verified edits in the worktree. If the failure is infrastructure-only or requires architecture/intent/security judgment, make no edits and explain why."""
-    cp=subprocess.run([codex,"exec","-s","workspace-write","-a","never","-C",str(wt),prompt],text=True,capture_output=True,timeout=int(p.get("repair_timeout_seconds",1200)))
+    attempts=_load_attempts(root); key=_attempt_key(repo,pr)
+    if attempts.get(key,0)>=int(p.get('max_repair_attempts',3)):
+        escalate(repo,pr,'exhausted_retries')
+        return "repair escalated: bounded retries exhausted"
+    attempts[key]=attempts.get(key,0)+1; _save_attempts(root,attempts)
+    try:
+        cp=subprocess.run([codex,"exec","-s","workspace-write","-a","never","-C",str(wt),prompt],text=True,capture_output=True,timeout=int(p.get("repair_timeout_seconds",1200)))
+    except subprocess.TimeoutExpired:
+        return "repair worker timeout"
     if cp.returncode: return "repair worker failed"
-    changed=run(["git","diff","--name-only"],timeout=60,check=False) if False else subprocess.run(["git","diff","--name-only"],cwd=wt,text=True,capture_output=True).stdout.splitlines()
+    changed=[l for l in subprocess.run(["git","diff","--name-only"],cwd=wt,text=True,capture_output=True).stdout.splitlines() if l.strip() and not any(l.endswith(j.split('/')[-1]) if '/' not in j else l.startswith(j.split('/')[0]+'/') and l.endswith(j) for j in JUNK)]
     blocked=[x.rstrip('/') for x in p.get('blocked_paths',[])]
     if any(path==b or path.startswith(b+'/') for path in changed for b in blocked): return "repair blocked by path policy"
     if not changed: return "repair produced no code change"
@@ -80,6 +104,7 @@ def repair(repo,pr,p):
     subprocess.run(['git','add','--',*changed],cwd=wt,check=True)
     subprocess.run(['git','commit','-m',f"fix: autonomously remediate PR #{pr['number']}"],cwd=wt,check=True)
     subprocess.run(['git','push','origin',f"HEAD:refs/heads/{pr['headRefName']}"],cwd=wt,check=True,timeout=180)
+    attempts=_load_attempts(root); attempts.pop(_attempt_key(repo,pr),None); _save_attempts(root,attempts)
     return "repair pushed; awaiting GitHub event"
 
 def merge(repo,pr,p):
