@@ -126,6 +126,25 @@
       ]
     },
     {
+      "label": "org.aineko.intent-worker",
+      "role": "Bounded fresh-context worker for approved Aineko control intents",
+      "start_interval_seconds": 60,
+      "command": [
+        "python3",
+        "$EXOCORTEX_CURRENT/goms-v2/aineko_worker_dispatcher.py",
+        "--root",
+        "$GOMS_HOME"
+      ],
+      "environment": {
+        "GOMS_HOME": "$GOMS_HOME",
+        "HERMES_AGENT_HOME": "$HOME/.hermes/hermes-agent",
+        "HERMES_PROFILE": "gsvaineko",
+        "AINEKO_WORKER_CONTEXT_CHARS": "28000",
+        "AINEKO_WORKER_MAX_TOOL_CALLS": "12",
+        "AINEKO_WORKER_TIMEOUT_SECONDS": "900"
+      }
+    },
+    {
       "label": "org.aineko.goms-obsidian-sync",
       "role": "Governed GOMS to Obsidian projection and inbound candidate capture",
       "start_interval_seconds": 900,

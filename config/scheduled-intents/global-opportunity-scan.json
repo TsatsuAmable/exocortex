@@ -1,0 +1,14 @@
+{
+  "id": "global-opportunity-scan",
+  "title": "Global opportunity scan",
+  "summary": "Search for low-obligation cash, compute hardware, grants, prizes, sponsorships, developer kits, and unusually high-value hardware opportunities that fit existing work.",
+  "project": "Agalmic Research",
+  "priority": "P2",
+  "risk_tier": "low",
+  "verification_policy": {
+    "require_primary_source": true,
+    "require_current_eligibility": true,
+    "require_real_outcome_check": true
+  },
+  "instructions": "Search globally for concrete ways to increase T's discretionary cash or owned compute without incorporation, employment, fixed hours, regular client commitments, substantial recurring delivery obligations, or significant capital outlay. Prioritise: individual cash grants/prizes; GPU/workstation/server/VR/MR donations, sponsorships, developer kits or surplus/refurbished programmes; exceptional low-cost hardware opportunities. Existing work only: Moneta, MonetaBench, Nemosyne, gesture intelligence, Exocortex. Verify current status and individual UK eligibility from primary sources. For survivors assess catch, sponsor benefit, what T loses, ongoing obligations, usable value, probability, urgency, strategic reuse and attention cost. For hardware assess landed cost, VRAM/bandwidth, expansion, RAM ceiling, power, compatibility, longevity and resale. Reuse prior GOMS opportunity-scan evidence to avoid dead ends. Factual exploratory email is allowed when a verified address exists, but make no commitments and accept no legal/IP/spend/travel/publicity terms. Record durable GOMS evidence every run. Only create/surface an attention item when there is a materially strong actionable candidate, important reply, or exceptional hardware buy."
+}
