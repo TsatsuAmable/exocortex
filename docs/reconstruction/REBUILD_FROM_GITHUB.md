@@ -116,3 +116,13 @@ A reconstruction is not complete merely because processes start. It must prove G
 Record the repository commit, host/platform, dependency versions, state bundle ID if any, deviations from reference configuration, and acceptance results.
 
 Store the record in GOMS and, without secrets, in GitHub issues/logs as appropriate.
+
+### Restore bounded recurring cognition
+
+After Hermes profile installation, recreate/update the zero-LLM recurring-job bindings from the versioned scheduled-intent specs:
+
+```bash
+python3 ~/.local/share/exocortex/current/scripts/install_bounded_cron_jobs.py --profile gsvaineko
+```
+
+This copies the versioned enqueue wrappers into the Hermes script sandbox and makes the recurring jobs `no-agent`. Their scheduler turns only enqueue approved GOMS intents; `org.aineko.intent-worker` executes those intents in fresh bounded contexts.
