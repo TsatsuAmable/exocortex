@@ -60,6 +60,8 @@ def merge(repo,pr,p):
     return 'merged'
 
 def _intent_service():
+    goms_root=Path(os.environ.get('GOMS_HOME', str(Path.home()/'Library/Application Support/Aineko/GOMS')))
+    os.environ.setdefault('GOMS_HOME', str(goms_root))
     source=Path(os.environ.get('EXOCORTEX_CURRENT', str(Path.home()/'.local/share/exocortex/current')))/'goms-v2'
     if not (source/'control_intents.py').exists():
         source=ROOT.parent/'goms-v2'
@@ -68,7 +70,6 @@ def _intent_service():
     if str(source) not in sys.path:
         sys.path.insert(0,str(source))
     from control_intents import ControlIntentService
-    goms_root=Path(os.environ.get('GOMS_HOME', str(Path.home()/'Library/Application Support/Aineko/GOMS')))
     return ControlIntentService(goms_root)
 
 def enqueue_remediation(repo,pr,state,detail,p):
