@@ -53,6 +53,19 @@ A recovered Exocortex is accepted only when behaviour, authority, and persistenc
 - [ ] Selected control-plane service can be restarted under the correct authority mode.
 - [ ] Original capability is verified after repair.
 
+## Aineko intent dispatch (Exocortex v1)
+
+- [ ] `submit_intent` creates a durable `control_intent` (kind `aineko_task`) and returns `intent_id` + `acknowledged` (MCP and Manfred).
+- [ ] Same `idempotency_key` + same payload replays same `intent_id` without duplicate row; different payload with same key is rejected (`idempotency_key_reused`).
+- [ ] Status is queryable (`control_intent` / `control_intents` / `ControlIntentService.get`) and includes `acknowledged_at` and `provenance.submission`.
+- [ ] `cancel_intent` before `EXECUTING` transitions to `CANCELLED` (audited); `cancel` after `EXECUTING` is rejected.
+- [ ] Approved intents appear in Aineko worker queue (`aineko_pending_intents`); `HUMAN_ONLY` remains non-claimable.
+- [ ] `aineko_claim_intent` is atomic (one `control_intent_execution_attempts` row, `APPROVED → EXECUTING`); second claim fails. Restart preserves the claim.
+- [ ] `aineko_complete_intent` writes durable evidence (`evidence` entity, `evidence_refs`, `outcome`) and transitions to `RESOLVED`/`FAILED`.
+- [ ] Submission without `human_attested` + `human:` actor stays `NEEDS_DECISION` (no auto-authorization); with explicit `human_attested` + `human:` actor auto-approves but `HUMAN_ONLY` still blocks worker claim.
+- [ ] All transitions are audited (`control_intent_events` + `events.jsonl`); `goms-v2/test_aineko_dispatch.py` passes green.
+- [ ] Restart (reopen `GomsStore` / reload `ControlIntentService`) preserves intents, submissions, and claims.
+
 ## Optional Manfred
 
 - [ ] Read surface authenticates and returns a brief.

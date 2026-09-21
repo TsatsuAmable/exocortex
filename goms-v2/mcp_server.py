@@ -457,6 +457,85 @@ def link_control_intent_conversation(intent_id: str, role: str,
         return {"ok":False,"error":"invalid_conversation_link"}
 
 
+@server.tool(structured_output=True, description="Durably submit a task to Aineko via the canonical control-intent contract. Idempotent via idempotency_key, emits durable intent ID plus acknowledgement. Submission is not authorization unless human_attested with human resolved_by.")
+def submit_intent(title: str, summary: str = "", kind: str = "aineko_task",
+                  source: str = "external", source_ref: str | None = None,
+                  project: str | None = None, priority: str = "P2",
+                  risk_tier: str = "normal", execution_policy: str = "HUMAN_ONLY",
+                  recommended_action: dict | None = None, alternatives: list | None = None,
+                  verification_policy: dict | None = None, provenance: dict | None = None,
+                  evidence_refs: list | None = None, decision_required: bool = True,
+                  idempotency_key: str | None = None, actor: str = "external",
+                  human_attested: bool = False, resolved_by: str | None = None,
+                  origin_conversation_id: str | None = None,
+                  origin_conversation_url: str | None = None,
+                  locator_source: str = "unverified") -> dict[str, Any]:
+    try:
+        result = _intent_service().submit_intent(
+            title=title, summary=summary, kind=kind, source=source, source_ref=source_ref,
+            project=project, priority=priority, risk_tier=risk_tier, execution_policy=execution_policy,
+            recommended_action=recommended_action, alternatives=alternatives,
+            verification_policy=verification_policy, provenance=provenance,
+            evidence_refs=evidence_refs, decision_required=decision_required,
+            idempotency_key=idempotency_key, actor=actor, human_attested=human_attested,
+            resolved_by=resolved_by, origin_conversation_id=origin_conversation_id,
+            origin_conversation_url=origin_conversation_url, locator_source=locator_source)
+        return ok(intent_id=result["intent_id"], intent=result["intent"],
+                  acknowledged=result.get("acknowledged", True), replayed=result.get("replayed", False))
+    except ValueError as exc:
+        msg = str(exc)
+        if msg == "idempotency_key_reused":
+            return {"ok": False, "error": "idempotency_key_reused"}
+        if msg in {"invalid_conversation_url", "invalid_conversation_locator_source"}:
+            return {"ok": False, "error": msg}
+        return {"ok": False, "error": msg}
+    except KeyError as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+@server.tool(structured_output=True, description="Cancel a submitted control intent before execution. Safe only from pre-execution states.")
+def cancel_intent(intent_id: str, actor: str = "external", reason: str = "") -> dict[str, Any]:
+    try:
+        intent = _intent_service().cancel_intent(intent_id, actor, reason)
+        return ok(intent=intent, intent_id=intent_id, status=intent["status"])
+    except KeyError:
+        return {"ok": False, "error": "intent_not_found"}
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+@server.tool(structured_output=True, description="List Aineko worker queue: approved control intents awaiting claim.")
+def aineko_pending_intents(kind: str | None = None, limit: int = 20) -> dict[str, Any]:
+    try:
+        intents = _intent_service().list_pending_for_worker(kind=kind, limit=limit)
+        return ok(intents=intents, count=len(intents))
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+@server.tool(structured_output=True, description="Aineko worker claim boundary: atomically claim an approved intent for execution. Respects HUMAN_ONLY.")
+def aineko_claim_intent(intent_id: str, worker_id: str, action_type: str = "aineko_task", target_id: str | None = None) -> dict[str, Any]:
+    try:
+        attempt_id = _intent_service().claim_for_aineko(intent_id, worker_id, action_type, target_id)
+        intent = _intent_service().get(intent_id)
+        return ok(intent_id=intent_id, execution_attempt_id=attempt_id, intent=intent)
+    except KeyError:
+        return {"ok": False, "error": "intent_not_found"}
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+@server.tool(structured_output=True, description="Record Aineko worker execution evidence/result and resolve the control intent. Creates durable evidence and transitions intent.")
+def aineko_complete_intent(intent_id: str, attempt_id: str, worker_id: str, status: str = "SUCCESS", result: dict | None = None, evidence_title: str | None = None, evidence_summary: str | None = None) -> dict[str, Any]:
+    try:
+        intent = _intent_service().record_aineko_result(intent_id, attempt_id, worker_id, status, result, evidence_title, evidence_summary)
+        return ok(intent_id=intent_id, intent=intent, status=intent["status"])
+    except KeyError as exc:
+        return {"ok": False, "error": str(exc) if "Unknown" in str(exc) else "intent_not_found"}
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 @server.tool(structured_output=True, description="Return a compact system resilience summary across cognition, infrastructure and open priority faults.")
 def system_resilience() -> dict[str, Any]:
     with store.connect() as con:

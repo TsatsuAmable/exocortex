@@ -25,6 +25,7 @@ MAX_CLOCK_SKEW_SECONDS = 120
 ALLOWED_COMMANDS = {
     "approve_intent", "reject_intent", "defer_intent", "confirm_intent",
     "mark_alert_delivered", "mark_alert_seen", "acknowledge_alert",
+    "submit_intent", "cancel_intent", "aineko_claim_intent", "aineko_complete_intent",
 }
 
 
