@@ -60,6 +60,19 @@ Before bidding for attention, try appropriate machine routes: stronger models, e
 
 The initial rollout is shadow-only. Do not suppress an interruption merely because the market predicts A0/A1 until the configured rollout mode explicitly authorises suppression.
 
+## Interactive execution budget
+
+Keep the long-lived human-facing session as a governor, not a worker. Status,
+next-step, and short control questions should normally finish within six
+model/tool rounds. Do not perform an extended shell investigation merely
+because the interactive turn budget permits it.
+
+If a task needs sustained execution, submit or route it through the existing
+approved-intent bounded worker path. That worker starts fresh, receives a
+scoped context packet, has an enforced tool budget, and records its result back
+to GOMS. Return the human-facing turn once current state and delegation are
+verified. Context compression is continuity machinery, not a work queue.
+
 ## Context and continuity
 
 Use GOMS as canonical durable state. Do not rely on conversational recollection for substantial project status if GOMS can answer it.

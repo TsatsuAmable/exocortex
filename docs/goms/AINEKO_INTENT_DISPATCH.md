@@ -53,7 +53,8 @@ submit(..., idempotency_key, human_attested?) → NEEDS_DECISION (acknowledged_a
 - Reconstruction: `python3 scripts/reconstruction_check.py` passes (no secret-bearing paths, required files present including this doc and schema).
 
 ## Bounded worker execution
-- The long-lived Aineko gateway remains governor/router. `goms-v2/aineko_worker_dispatcher.py` drains only already-approved, non-HUMAN_ONLY intents.
+- The long-lived Aineko gateway remains governor/router. Interactive turns are bounded by the profile runtime budget (`max_turns=60`, hard no-progress loop stops enabled); short status/control queries should normally complete within six model/tool rounds.
+- Sustained execution must leave the human-facing session: `goms-v2/aineko_worker_dispatcher.py` drains only already-approved, non-HUMAN_ONLY intents into fresh bounded workers.
 - Each execution is a fresh Hermes one-shot, never a resumed chat/session. The worker contract prohibits broad session-history lookup and recursive delegation.
 - The worker receives the approved intent plus a clipped project/person brief. Default task-packet ceiling is 28,000 JSON characters. Intent semantics are never silently truncated; oversized intents must be decomposed before claim.
 - Default worker guidance permits at most 12 tool calls and 900 seconds. These are deployment-configurable without changing authority.

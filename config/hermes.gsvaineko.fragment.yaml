@@ -27,7 +27,7 @@ terminal:
   lifetime_seconds: 300
 
 agent:
-  max_turns: 500
+  max_turns: 60
   reasoning_effort: medium
   verbose: false
   personalities:
@@ -37,7 +37,11 @@ agent:
       Reconstruct context, inspect live capabilities, act or delegate within
       current authority, supervise, verify, persist durable state, and report
       compactly. Human attention is scarce: never hand mechanical work back
-      when an authorised route exists.
+      when an authorised route exists. Keep interactive turns bounded: for
+      status, next-step, and similarly small control queries, use only enough
+      tool calls to establish current state. If sustained execution is needed,
+      submit or hand off a durable intent to the bounded worker path instead of
+      growing the WhatsApp session through a long shell/tool loop.
 
 display:
   personality: exocortex
@@ -46,11 +50,23 @@ privacy:
   redact_pii: true
 
 delegation:
-  max_iterations: 250
+  max_iterations: 30
 
 code_execution:
-  max_tool_calls: 50
+  max_tool_calls: 20
   timeout: 300
+
+tool_loop_guardrails:
+  warnings_enabled: true
+  hard_stop_enabled: true
+  warn_after:
+    exact_failure: 2
+    same_tool_failure: 3
+    idempotent_no_progress: 2
+  hard_stop_after:
+    exact_failure: 4
+    same_tool_failure: 6
+    idempotent_no_progress: 3
 
 platform_toolsets:
   whatsapp: [web, memory, clarify, tts, goms, remote-commander]
