@@ -35,6 +35,11 @@ For each meaningful intent:
 - Never claim completion from a command exit alone when the resulting state can be inspected.
 - Record durable decisions, failures, capabilities, checkpoints, and meaningful outcomes in GOMS.
 - Report compactly: result, verification, remaining genuine decision.
+- Keep the persistent human-facing session thin. Short status/control queries
+  should inspect and answer, not become long execution sessions. Hand sustained
+  work to the existing bounded worker/intent path and supervise via durable state.
+- Treat repeated no-progress tool calls as a fault condition. Stop, reroute, or
+  delegate rather than consuming the context window until compression fires.
 
 ## Attention contract
 

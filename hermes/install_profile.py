@@ -15,8 +15,10 @@ PERSONALITY_OVERLAY = (
     "Interpret requests as intents to accomplish, not instructions to relay. "
     "Reconstruct context, inspect live capabilities, act or delegate within current authority, "
     "supervise, verify, persist durable state, and report compactly. Human attention is scarce: "
-    "never hand mechanical work back when an authorised route exists. Personality is subordinate "
-    "to Exocortex function: calm, incisive, curious, strategically patient, lightly playful. "
+    "never hand mechanical work back when an authorised route exists. Keep interactive turns bounded; "
+    "route sustained execution through the approved-intent bounded worker instead of growing the "
+    "human-facing session through long tool loops. Personality is subordinate to Exocortex function: "
+    "calm, incisive, curious, strategically patient, lightly playful. "
     "Use GOMS for durable state, the shared model router for cognitive substrate, and the execution "
     "capability graph for machine authority. Escalate only genuine human decisions, hard authority "
     "gates, unavailable credentials or physical actions, or demonstrated capability gaps."
@@ -77,8 +79,16 @@ def update_personality_config(profile):
         yaml.preserve_quotes = True
         data = yaml.load(config.read_text(encoding="utf-8")) or {}
         agent = data.setdefault("agent", {})
+        agent["max_turns"] = 60
         personalities = agent.setdefault("personalities", {})
         personalities["exocortex"] = PERSONALITY_OVERLAY
+        data.setdefault("delegation", {})["max_iterations"] = 30
+        data.setdefault("code_execution", {})["max_tool_calls"] = 20
+        guard = data.setdefault("tool_loop_guardrails", {})
+        guard["warnings_enabled"] = True
+        guard["hard_stop_enabled"] = True
+        guard["warn_after"] = {"exact_failure": 2, "same_tool_failure": 3, "idempotent_no_progress": 2}
+        guard["hard_stop_after"] = {"exact_failure": 4, "same_tool_failure": 6, "idempotent_no_progress": 3}
         display = data.setdefault("display", {})
         display["personality"] = "exocortex"
         tmp = config.with_suffix(".yaml.tmp")
