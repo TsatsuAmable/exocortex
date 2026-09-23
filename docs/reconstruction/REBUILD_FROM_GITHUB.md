@@ -62,6 +62,19 @@ Clone/install `NousResearch/hermes-agent` and check out:
 
 Use Python 3.11 compatible with that release.
 
+Before starting Hermes, apply the Exocortex-qualified compatibility patch. It makes
+main-provider fallback context-safe: a smaller fallback is skipped when the live
+request cannot fit its safe input window, and Ollama runtime context is re-resolved
+when the fallback model changes.
+
+```bash
+python3 ~/.local/share/exocortex/current/hermes/apply_hermes_patches.py \
+  --hermes-home ~/.hermes/hermes-agent
+```
+
+Do not force this patch onto another Hermes revision. The applicator fails closed
+when the checkout is not at the qualified base commit.
+
 Then install the Exocortex profile:
 
 ```bash

@@ -81,7 +81,10 @@
       "kind": "agent_runtime",
       "repository": "https://github.com/NousResearch/hermes-agent",
       "known_good_commit": "f6ddd89692dff1f900983a16208f39a1485a14eb",
-      "known_good_version": "0.21.1"
+      "known_good_version": "0.21.1",
+      "qualified_patches": [
+        "hermes/patches/context-safe-main-fallback.patch"
+      ]
     },
     "remote_commander": {
       "kind": "machine_effector",

@@ -38,6 +38,8 @@ REQUIRED = [
     "hermes/SOUL.md",
     "hermes/profile_manifest.json",
     "hermes/install_profile.py",
+    "hermes/apply_hermes_patches.py",
+    "hermes/patches/context-safe-main-fallback.patch",
     "docs/reconstruction/REBUILD_FROM_GITHUB.md",
     "docs/reconstruction/STATE_AND_SECRETS.md",
     "docs/reconstruction/ACCEPTANCE_CHECKLIST.md",
