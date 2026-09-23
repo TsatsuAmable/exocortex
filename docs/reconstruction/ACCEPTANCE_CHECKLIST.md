@@ -23,6 +23,7 @@ A recovered Exocortex is accepted only when behaviour, authority, and persistenc
 ## GSV Aineko / Hermes
 
 - [ ] Hermes runs at the selected tested/pinned version.
+- [ ] `apply_hermes_patches.py --verify` confirms the Exocortex context-safe fallback patch is present.
 - [ ] `install_profile.py --check` passes.
 - [ ] Active personality is `exocortex`.
 - [ ] Skill index exposes all five Exocortex skills.
@@ -36,6 +37,8 @@ A recovered Exocortex is accepted only when behaviour, authority, and persistenc
 - [ ] Retired/disabled/unqualified candidates are not promoted as primary.
 - [ ] Private tasks exclude non-private routes.
 - [ ] Provider/model failure can fall back without changing machine authority.
+- [ ] A fallback whose safe input window is smaller than the live request is skipped without compressing the conversation merely to fit it.
+- [ ] A local Ollama fallback re-resolves its own runtime `num_ctx` rather than inheriting the primary model's value.
 
 ## Execution and authority
 

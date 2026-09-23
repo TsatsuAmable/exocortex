@@ -1,0 +1,275 @@
+From ec7ac92639acafba7e8eb2e52f77a2164d601265 Mon Sep 17 00:00:00 2001
+From: tsatsuamable <huyleraineko@gmail.com>
+Date: Wed, 23 Sep 2026 05:07:14 +0100
+Subject: [PATCH] fix: preserve context across provider fallback
+
+---
+ agent/chat_completion_helpers.py              | 88 +++++++++++++++----
+ agent/turn_api_error.py                       |  4 +-
+ agent/turn_recovery.py                        | 11 ++-
+ .../test_compressor_fallback_update.py        | 66 ++++++++++++++
+ 4 files changed, 148 insertions(+), 21 deletions(-)
+
+diff --git a/agent/chat_completion_helpers.py b/agent/chat_completion_helpers.py
+index b9cf6a1d..0489cb60 100644
+--- a/agent/chat_completion_helpers.py
++++ b/agent/chat_completion_helpers.py
+@@ -1756,26 +1756,60 @@ def _should_skip_fallback_candidate(agent, fb: dict, fb_key: tuple, fb_provider:
+     return False
+ 
+ 
+-def _update_fallback_context_compressor(agent) -> None:
+-    """Point compression limits at the fallback model's context window (not the primary's),
+-    respecting the explicit model.context_length config override."""
++def _resolve_fallback_context_length(agent, model: str, provider: str, base_url: str, api_key: Any) -> int:
++    """Resolve one fallback's own context window before mutating the live agent."""
++    from agent.model_metadata import get_model_context_length
++    key = api_key if isinstance(api_key, str) else ""
++    return get_model_context_length(
++        model, base_url=base_url, api_key=key, provider=provider,
++        config_context_length=None, custom_providers=getattr(agent, "_custom_providers", None),
++    )
++
++
++def _fallback_safe_input_threshold(agent, context_length: int) -> int:
++    """Largest request that can enter a fallback without immediately compacting."""
++    compressor = getattr(agent, "context_compressor", None)
++    if not compressor or context_length <= 0:
++        return context_length
++    from agent.context_compressor import ContextCompressor
++    pct = ContextCompressor._effective_threshold_percent(
++        context_length, float(getattr(compressor, "threshold_percent", 0.5) or 0.5)
++    )
++    return ContextCompressor._compute_threshold_tokens(
++        context_length, pct, getattr(compressor, "max_tokens", None)
++    )
++
++
++def _update_fallback_context_compressor(agent, context_length: int | None = None) -> None:
++    """Point compression limits at the fallback model's context window (not the primary's)."""
+     compressor = getattr(agent, "context_compressor", None)
+     if not compressor:
+         return
+-    from agent.model_metadata import get_model_context_length
+-    fb_context_length = get_model_context_length(
+-        agent.model, base_url=agent.base_url,
+-        api_key=agent.api_key if isinstance(agent.api_key, str) else "",  # callable (Entra ID) → probes need str
+-        provider=agent.provider,
+-        config_context_length=getattr(agent, "_config_context_length", None),
+-        custom_providers=getattr(agent, "_custom_providers", None),
+-    )
++    if context_length is None:
++        context_length = _resolve_fallback_context_length(
++            agent, agent.model, agent.provider, agent.base_url, getattr(agent, "api_key", "")
++        )
+     compressor.update_model(  # callable api_key preserved → call_llm
+-        model=agent.model, context_length=fb_context_length, base_url=agent.base_url,
++        model=agent.model, context_length=context_length, base_url=agent.base_url,
+         api_key=getattr(agent, "api_key", ""), provider=agent.provider, api_mode=agent.api_mode,
+     )
+ 
+ 
++def _update_fallback_ollama_num_ctx(agent, context_length: int | None = None) -> None:
++    """Drop the primary model's Ollama runtime window and resolve it for the fallback."""
++    agent._ollama_num_ctx = None
++    if not getattr(agent, "base_url", "") or not is_local_endpoint(agent.base_url):
++        return
++    try:
++        from agent.model_metadata import query_ollama_num_ctx
++        key = agent.api_key if isinstance(agent.api_key, str) else ""
++        detected = query_ollama_num_ctx(agent.model, agent.base_url, api_key=key or "")
++        if detected and detected > 0:
++            agent._ollama_num_ctx = min(detected, context_length) if context_length else detected
++    except Exception as exc:
++        logger.debug("Fallback Ollama num_ctx detection failed for %s: %s", agent.model, exc)
++
++
+ def _reresolve_fallback_reasoning_config(agent) -> None:
+     """Per-model override > global reasoning_effort (YAML False = disabled); a config load
+     failure keeps the current reasoning_config rather than killing the swap."""
+@@ -1825,10 +1859,15 @@ def _buffer_fallback_notice(agent, notice: str) -> None:
+         agent._pending_fallback_notice = [str(pending), notice] if pending else [notice]
+ 
+ 
+-def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool:
+-    """Switch to the next fallback model/provider in the chain; False when exhausted. Swaps client,
+-    model slug and provider in place so the retry loop continues on the new backend; client
+-    construction goes through resolve_provider_client (no duplicated provider→key mappings)."""
++def try_activate_fallback(
++    agent, reason: "FailoverReason | None" = None, required_context_tokens: int | None = None
++) -> bool:
++    """Switch to the next context-compatible fallback model/provider in the chain.
++
++    required_context_tokens is the already-built request pressure. Candidates whose
++    safe input threshold is smaller are skipped rather than activating them and forcing
++    immediate context compression.
++    """
+     from agent.fallback_cooldown import _arm_rate_limit_cooldown
+     cooldown_seconds = _arm_rate_limit_cooldown(agent, reason)
+     while True:
+@@ -1875,6 +1914,20 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
+             if not fb_api_mode_explicit and fb_api_mode == "chat_completions":
+                 fb_api_mode = _fallback_api_mode_resolved(agent, fb_provider, fb_model, fb_base_url)
+ 
++            fb_context_length = _resolve_fallback_context_length(
++                agent, fb_model, fb_provider, fb_base_url,
++                getattr(fb_client, "api_key", "") or fb_api_key_hint or "",
++            )
++            if isinstance(required_context_tokens, int) and required_context_tokens > 0:
++                safe_threshold = _fallback_safe_input_threshold(agent, fb_context_length)
++                if safe_threshold > 0 and required_context_tokens > safe_threshold:
++                    logger.warning(
++                        "Fallback skip: %s/%s safe input threshold=%d < current request=%d "
++                        "(context=%d); preserving the current conversation instead of compacting to fit",
++                        fb_provider, fb_model, safe_threshold, required_context_tokens, fb_context_length,
++                    )
++                    continue
++
+             old_model, old_provider, old_base_url = agent.model, agent.provider, agent.base_url
+ 
+             # Clear the per-config context_length override so the fallback model's own context
+@@ -1899,7 +1952,8 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
+             agent._use_prompt_caching, agent._use_native_cache_layout = agent._anthropic_prompt_cache_policy(
+                 provider=fb_provider, base_url=fb_base_url, api_mode=fb_api_mode, model=fb_model)
+             agent._ensure_lmstudio_runtime_loaded()  # LM Studio: preload before probing context length
+-            _update_fallback_context_compressor(agent)
++            _update_fallback_context_compressor(agent, fb_context_length)
++            _update_fallback_ollama_num_ctx(agent, fb_context_length)
+             _reresolve_fallback_reasoning_config(agent)
+             _rescope_fallback_extra_body(agent, old_model, old_provider, old_base_url)
+             rewrite_prompt_model_identity(agent, fb_model, fb_provider)
+diff --git a/agent/turn_api_error.py b/agent/turn_api_error.py
+index 305570c8..912984f7 100644
+--- a/agent/turn_api_error.py
++++ b/agent/turn_api_error.py
+@@ -309,7 +309,7 @@ def settle_unrecovered_error(
+         if agent._has_pending_fallback():
+             _label = _NONRETRYABLE_LABELS.get(classified.reason, f"Non-retryable error (HTTP {status_code})")
+             agent._buffer_status(f"⚠️ {_label} — trying fallback...")
+-        if agent._try_activate_fallback():
++        if agent._try_activate_fallback(required_context_tokens=approx_tokens):
+             # Direct ``return _verdict("break")`` is load-bearing: the restart handler
+             # re-runs the pre-API preflight against the fallback's context window.
+             active_system_prompt = _arm_fallback_restart(agent, api_messages, active_system_prompt, _retry)
+@@ -338,7 +338,7 @@ def settle_unrecovered_error(
+             return _verdict("continue")
+         if agent._has_pending_fallback():
+             agent._buffer_status(f"⚠️ Max retries ({max_retries}) exhausted — trying fallback...")
+-        if agent._try_activate_fallback():
++        if agent._try_activate_fallback(required_context_tokens=approx_tokens):
+             # Direct ``return _verdict("break")`` is load-bearing: the restart handler
+             # re-runs the pre-API preflight against the fallback's context window.
+             active_system_prompt = _arm_fallback_restart(agent, api_messages, active_system_prompt, _retry)
+diff --git a/agent/turn_recovery.py b/agent/turn_recovery.py
+index 38019505..f73ab33d 100644
+--- a/agent/turn_recovery.py
++++ b/agent/turn_recovery.py
+@@ -1397,6 +1397,9 @@ def route_classified_error(
+         if classified.reason == FailoverReason.rate_limit else None
+     )
+     _is_transport_failure = classified.reason in _TRANSPORT_FAILURE_REASONS
++    _required_fallback_tokens = estimate_request_tokens_rough(
++        api_messages, tools=agent.tools or None
++    )
+     # Z.AI overload 429s classify `overloaded`, which `is_rate_limited` excludes. Detect
+     # directly so the long backoff runs, and raise the ceiling to reach it.
+     _is_zai_coding_overload = is_zai_coding_overload_error(base_url=str(base_url), model=model, error=api_error)
+@@ -1416,7 +1419,9 @@ def route_classified_error(
+         )
+         if not pool_may_recover:
+             agent._buffer_status(_eager_fallback_status(classified, _is_upstream, _is_transport_failure))
+-            if agent._try_activate_fallback(reason=classified.reason):
++            if agent._try_activate_fallback(
++                reason=classified.reason, required_context_tokens=_required_fallback_tokens
++            ):
+                 return _fallback_break()
+ 
+     # A 401/403 surviving credential refresh means a broken credential or endpoint:
+@@ -1431,7 +1436,9 @@ def route_classified_error(
+             "🔐 Authentication failed and could not be refreshed — "
+             "switching to fallback provider..."
+         )
+-        if agent._try_activate_fallback(reason=classified.reason):
++        if agent._try_activate_fallback(
++            reason=classified.reason, required_context_tokens=_required_fallback_tokens
++        ):
+             return _fallback_break()
+ 
+     # Nous Portal: a genuine account-level 429 is recorded to a shared file so ALL
+diff --git a/tests/run_agent/test_compressor_fallback_update.py b/tests/run_agent/test_compressor_fallback_update.py
+index a5ff87a6..465f715a 100644
+--- a/tests/run_agent/test_compressor_fallback_update.py
++++ b/tests/run_agent/test_compressor_fallback_update.py
+@@ -72,3 +72,69 @@ def test_compressor_updated_on_fallback(mock_ctx_len, mock_resolve):
+     assert c.threshold_tokens == int(128_000 * c.threshold_percent)
+ 
+ 
++
++
++@patch("agent.auxiliary_client.resolve_provider_client")
++@patch("agent.model_metadata.get_model_context_length", return_value=65_536)
++def test_context_incompatible_fallback_is_skipped(mock_ctx_len, mock_resolve):
++    agent = _make_agent_with_compressor()
++    fb_client = MagicMock()
++    fb_client.base_url = "https://api.openai.com/v1"
++    fb_client.api_key = "sk-fallback"
++    mock_resolve.return_value = (fb_client, None)
++
++    original = (agent.model, agent.provider, agent.base_url)
++    result = agent._try_activate_fallback(required_context_tokens=100_000)
++
++    assert result is False
++    assert (agent.model, agent.provider, agent.base_url) == original
++    assert agent._fallback_activated is False
++
++
++@patch("agent.auxiliary_client.resolve_provider_client")
++@patch("agent.model_metadata.get_model_context_length", side_effect=[65_536, 262_144])
++def test_fallback_walk_skips_small_candidate_and_uses_large_one(mock_ctx_len, mock_resolve):
++    agent = _make_agent_with_compressor()
++    agent._fallback_chain = [
++        {"provider": "openai", "model": "small-fallback"},
++        {"provider": "custom", "model": "large-fallback",
++         "base_url": "https://large.example/v1", "api_key": "large-key"},
++    ]
++    agent._fallback_model = agent._fallback_chain[0]
++
++    small = MagicMock()
++    small.base_url = "https://api.openai.com/v1"
++    small.api_key = "small-key"
++    large = MagicMock()
++    large.base_url = "https://large.example/v1"
++    large.api_key = "large-key"
++    mock_resolve.side_effect = [(small, None), (large, None)]
++
++    agent._emit_status = lambda msg: None
++    result = agent._try_activate_fallback(required_context_tokens=100_000)
++
++    assert result is True
++    assert agent.model == "large-fallback"
++    assert agent.context_compressor.context_length == 262_144
++
++
++@patch("agent.model_metadata.query_ollama_num_ctx", return_value=131_072)
++@patch("agent.auxiliary_client.resolve_provider_client")
++@patch("agent.model_metadata.get_model_context_length", return_value=131_072)
++def test_fallback_recomputes_ollama_runtime_context(mock_ctx_len, mock_resolve, mock_num_ctx):
++    agent = _make_agent_with_compressor()
++    agent._fallback_chain = [{
++        "provider": "custom", "model": "local-fallback",
++        "base_url": "http://127.0.0.1:11434/v1", "api_key": "ollama",
++    }]
++    agent._fallback_model = agent._fallback_chain[0]
++    agent._ollama_num_ctx = 1_048_576
++
++    local = MagicMock()
++    local.base_url = "http://127.0.0.1:11434/v1"
++    local.api_key = "ollama"
++    mock_resolve.return_value = (local, None)
++    agent._emit_status = lambda msg: None
++
++    assert agent._try_activate_fallback(required_context_tokens=80_000) is True
++    assert agent._ollama_num_ctx == 131_072
+-- 
+2.53.0
+

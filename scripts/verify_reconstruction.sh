@@ -8,6 +8,12 @@ python3 scripts/reconstruction_check.py
 python3 -m unittest -q test_exocortex_deploy.py
 python3 compute/model-routing/test_router.py
 
+if [ -d "$HOME/.hermes/hermes-agent/.git" ]; then
+  python3 hermes/apply_hermes_patches.py --verify --hermes-home "$HOME/.hermes/hermes-agent"
+else
+  echo "NOTE: Hermes checkout unavailable; skipping Exocortex Hermes patch verification" >&2
+fi
+
 if [ -x "$HOME/.hermes/hermes-agent/venv/bin/python" ]; then
   "$HOME/.hermes/hermes-agent/venv/bin/python" -m unittest -q hermes/test_install_profile.py
 else
