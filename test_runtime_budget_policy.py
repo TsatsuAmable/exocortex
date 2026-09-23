@@ -27,5 +27,14 @@ class RuntimeBudgetPolicyTest(unittest.TestCase):
         self.assertIn('data.setdefault("delegation", {})["max_iterations"] = 30', installer)
         self.assertIn('guard["hard_stop_enabled"] = True', installer)
 
+    def test_context_capacity_is_model_aware(self):
+        fragment = (ROOT / "config/hermes.gsvaineko.fragment.yaml").read_text()
+        installer = (ROOT / "hermes/install_profile.py").read_text()
+        fallback = (ROOT / "models/gsvaineko-core.Modelfile").read_text()
+        model_block = fragment.split("fallback_model:", 1)[0]
+        self.assertNotIn("context_length:", model_block)
+        self.assertIn('.pop("context_length", None)', installer)
+        self.assertIn("PARAMETER num_ctx 65536", fallback)
+
 if __name__ == "__main__":
     unittest.main()

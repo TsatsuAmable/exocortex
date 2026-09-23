@@ -6,7 +6,8 @@ model:
   base_url: http://127.0.0.1:11434/v1
   api_key: ollama
   default: glm-5.3-flash:cloud
-  context_length: 65536
+  # Do not pin context_length here. Hermes resolves the selected model/provider
+  # capability dynamically; per-model runtime limits remain authoritative.
 
 fallback_model:
   provider: ollama-launch

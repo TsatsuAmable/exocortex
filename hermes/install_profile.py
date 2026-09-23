@@ -78,6 +78,10 @@ def update_personality_config(profile):
         yaml = YAML()
         yaml.preserve_quotes = True
         data = yaml.load(config.read_text(encoding="utf-8")) or {}
+        # Context capacity belongs to the selected model/provider contract.
+        # A global profile pin can silently undercut a larger chosen model and
+        # can also overstate a smaller fallback. Let Hermes resolve it per model.
+        data.setdefault("model", {}).pop("context_length", None)
         agent = data.setdefault("agent", {})
         agent["max_turns"] = 60
         personalities = agent.setdefault("personalities", {})
