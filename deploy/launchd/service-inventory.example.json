@@ -82,10 +82,10 @@
     },
     {
       "label": "org.aineko.goms-distillation-metrics",
-      "role": "Distillation metrics",
-      "start_interval_seconds": 60,
+      "role": "Periodic distillation metrics snapshot (quiet cadence)",
+      "start_interval_seconds": 900,
       "command": [
-        "python3",
+        "<GOMS_VENV_PYTHON>",
         "$GOMS_HOME/distillation_metrics.py"
       ]
     },
@@ -163,7 +163,7 @@
     },
     {
       "label": "org.aineko.goms-notion-sync",
-      "role": "Governed GOMS to Notion projection and inbound reconciliation steward",
+      "role": "Deterministic hourly GOMS\u2194Notion sync; LLM steward only on inbound edit or sync failure",
       "start_interval_seconds": 3600,
       "command": [
         "zsh",
@@ -305,6 +305,7 @@
     "ChatGPT live ingest/export-watch",
     "replication worker (not proven failover; further work deferred)",
     "vault sync",
-    "legacy/default Hermes gateway"
+    "legacy/default Hermes gateway",
+    "org.aineko.chatgpt-replication (deferred until replication/failover work resumes)"
   ]
 }

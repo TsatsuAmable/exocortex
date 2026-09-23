@@ -87,6 +87,6 @@ The canonical GOMS corpus contained fewer than 50 historical attention items whe
 ## Knowledge surfaces (2026-09-21, branch `feat/exocortex-knowledge-surfaces-20260920`, PR #5)
 
 - Governed bidirectional GOMS <-> Notion wiring implemented (`goms-v2/notion_surface_sync.py` + `goms-v2/test_notion_surface_sync.py`), mirroring the Obsidian adapter contract: inbound-first order, evidence-with-diff CANDIDATE capture, digest-based change detection, no last-writer-wins.
-- Deployed steward `scripts/run_notion_surface_steward.sh` (hourly `org.aineko.goms-notion-sync`) with proactive token rotation (`scripts/refresh_notion_token.py`, 1h threshold) added to the wrapper and service inventory.
+- Deployed `scripts/run_notion_surface_steward.sh` remains hourly via `org.aineko.goms-notion-sync`, but the normal path is deterministic sync only. The LLM steward now runs only when an inbound edit is captured or deterministic sync fails; proactive token rotation remains in the wrapper.
 - Live round trip verified: GOMS -> Notion ledger row -> bounded Notion edit -> provenance-bearing CANDIDATE evidence -> reconciliation path; idempotence gate passed (4 consecutive no-op passes against production GOMS state).
 - Sync-module test suite green (22/22). Full-discover failures in unrelated modules are pre-existing (Python 3.9 `str | None` syntax), proven by isolation.
