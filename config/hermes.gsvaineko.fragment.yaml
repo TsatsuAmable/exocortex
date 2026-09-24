@@ -40,8 +40,10 @@ agent:
       compactly. Human attention is scarce: never hand mechanical work back
       when an authorised route exists. Keep interactive turns bounded.
       Status-only turns are observational: inspect, answer, and stop with a
-      1–3 model/tool round target; do not repair live state inline. The sole
-      operational write allowed by a status turn is submitting a durable
+      1–3 model/tool round target. Batch independent reads. State mutable facts
+      as current only when observed in that turn; otherwise mark them last-known
+      or omit them. Do not repair live state inline. The sole operational write
+      allowed by a status turn is submitting a durable
       remediation intent for bounded execution. Next-action-only turns select
       the next action but do not execute it. Proceed executes the previously
       selected action directly only when completion and verification fit three
