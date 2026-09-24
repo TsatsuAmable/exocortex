@@ -1,0 +1,239 @@
+From e2f43ec9ea166dfa2ed5e138ad7a44d2a1cb6493 Mon Sep 17 00:00:00 2001
+From: tsatsuamable <huyleraineko@gmail.com>
+Date: Thu, 24 Sep 2026 05:21:05 +0100
+Subject: [PATCH] fix: enforce opted-in control turn budgets
+
+---
+ gateway/run_turn.py                           | 61 ++++++++++++++++++-
+ gateway/run_turn_runner.py                    | 24 +++++++-
+ gateway/turn_context.py                       |  1 +
+ .../test_exocortex_control_turn_policy.py     | 41 +++++++++++++
+ 4 files changed, 125 insertions(+), 2 deletions(-)
+ create mode 100644 tests/gateway/test_exocortex_control_turn_policy.py
+
+diff --git a/gateway/run_turn.py b/gateway/run_turn.py
+index 59baa0a2..e8e03df7 100644
+--- a/gateway/run_turn.py
++++ b/gateway/run_turn.py
+@@ -43,6 +43,47 @@ if TYPE_CHECKING:  # string annotations only; never imported at runtime (cycle)
+ logger = logging.getLogger("gateway.run")
+ 
+ 
++_EXOCORTEX_CONTROL_TURNS = {
++    "status": {"status", "status update", "status check", "what is the status", "what's the status", "whats the status"},
++    "what_next": {"what next", "what's next", "whats next", "next"},
++    "proceed": {"proceed"},
++}
++
++_EXOCORTEX_CONTROL_NOTES = {
++    "status": (
++        "[Exocortex control turn: STATUS] Observational only. Batch independent read-only checks. "
++        "Do not restart services, edit files/config, mutate git, install software, send messages, or "
++        "perform discovered remediation. Mutable facts stated as current must be observed in this turn; "
++        "otherwise mark them last-known or omit them. The only allowed operational write is submitting "
++        "a durable remediation intent to GOMS. Answer and stop within this turn's enforced iteration cap."
++    ),
++    "what_next": (
++        "[Exocortex control turn: WHAT NEXT] Decision only. Inspect enough current state to identify one "
++        "concrete next action, report it compactly, and do not execute it. Stop within this turn's enforced "
++        "iteration cap."
++    ),
++    "proceed": (
++        "[Exocortex control turn: PROCEED] Execute the most recently selected unambiguous action only if it "
++        "can be completed and verified within this turn's enforced iteration cap. Otherwise submit or route "
++        "a durable bounded-worker intent and return once delegation is verified."
++    ),
++}
++
++
++def _exocortex_control_turn_policy(message: Any, user_config: Any) -> tuple[Optional[str], Optional[int], Optional[str]]:
++    """Return (kind, max_iterations, one-shot note) for an opted-in exact control turn."""
++    if not isinstance(user_config, dict):
++        return None, None, None
++    agent_cfg = user_config.get("agent") or {}
++    if not isinstance(agent_cfg, dict) or agent_cfg.get("interactive_control_contract") != "exocortex":
++        return None, None, None
++    normalized = " ".join(str(message or "").strip().lower().split()).rstrip("?!.,;: ")
++    for kind, phrases in _EXOCORTEX_CONTROL_TURNS.items():
++        if normalized in phrases:
++            return kind, 3, _EXOCORTEX_CONTROL_NOTES[kind]
++    return None, None, None
++
++
+ class GatewayTurnMixin:
+     """Agent-turn execution for GatewayRunner (see module docstring)."""
+ 
+@@ -1822,6 +1863,8 @@ class GatewayTurnMixin:
+         persist_user_display_kind: Optional[str]
+         persistence_session_id: Optional[str] = None
+         persistence_owner: Optional[str] = None
++        max_iterations_override: Optional[int] = None
++        control_turn_kind: Optional[str] = None
+ 
+     async def _hmwa_prepare_turn(self, event, source, session_entry, session_key, _quick_key, run_generation):
+         """Everything between session resolution and the agent run: session open, task-local env,
+@@ -1837,8 +1880,10 @@ class GatewayTurnMixin:
+         # UIs render timeline notices, not user bubbles; role/content untouched.
+         persist_user_display_kind = "internal_notification" if getattr(event, "internal", False) else None
+         _redact_pii = False  # privacy.redact_pii, re-read per message
++        _turn_user_config: dict = {}
+         with suppress(Exception):
+-            _redact_pii = bool((_load_gateway_config().get("privacy") or {}).get("redact_pii", False))
++            _turn_user_config = _load_gateway_config() or {}
++            _redact_pii = bool((_turn_user_config.get("privacy") or {}).get("redact_pii", False))
+ 
+         # The context prompt render is pinned per session, keyed by a hash of the renderer inputs, so
+         # the system prompt cannot drift turn-over-turn; a miss (thread rename, /sethome) re-renders.
+@@ -1891,6 +1936,16 @@ class GatewayTurnMixin:
+         if message_text is None:
+             return None, _session_env_tokens
+ 
++        control_turn_kind, max_iterations_override, control_note = _exocortex_control_turn_policy(
++            getattr(event, "text", ""), _turn_user_config
++        )
++        if control_note:
++            turn_sidecar_notes.append(control_note)
++            logger.info(
++                "Exocortex control turn classified: kind=%s max_iterations=%s session=%s",
++                control_turn_kind, max_iterations_override, session_key,
++            )
++
+         message_text, persist_user_message, persist_user_timestamp = (
+             self._hmwa_apply_message_timestamp(event, message_text)
+         )
+@@ -1913,6 +1968,7 @@ class GatewayTurnMixin:
+         return self._PreparedTurn(
+             history, context_prompt, message_text, persist_user_message, persist_user_timestamp,
+             persist_user_display_kind, session_entry.session_id, owner,
++            max_iterations_override, control_turn_kind,
+         ), _session_env_tokens
+ 
+     async def _handle_message_with_agent(self, event, source, _quick_key: str, run_generation: int):
+@@ -1971,6 +2027,7 @@ class GatewayTurnMixin:
+                 persist_user_display_kind=prepared.persist_user_display_kind,
+                 persist_user_display_metadata={"gateway_input_owner": prepared.persistence_owner},
+                 message_type=event.message_type,
++                max_iterations_override=prepared.max_iterations_override,
+             )
+             _turn_seconds = time.monotonic() - _turn_started_monotonic
+ 
+@@ -3811,6 +3868,7 @@ class GatewayTurnMixin:
+         persist_user_message: Optional[Any] = None, persist_user_timestamp: Optional[float] = None,
+         persist_user_display_kind: Optional[str] = None, message_type: Optional[str] = None,
+         persist_user_display_metadata: Optional[dict] = None,
++        max_iterations_override: Optional[int] = None,
+     ) -> Dict[str, Any]:
+         """Run the agent; returns the full run_conversation result dict.
+ 
+@@ -3835,6 +3893,7 @@ class GatewayTurnMixin:
+             persist_user_timestamp=persist_user_timestamp,
+             persist_user_display_kind=persist_user_display_kind,
+             persist_user_display_metadata=persist_user_display_metadata,
++            max_iterations_override=max_iterations_override,
+         )
+         _status_thread_metadata = self._run_agent_bind_turn_wiring(
+             turn_ctx, turn_runner, source, event_message_id, disp._native_slack_task_cards,
+diff --git a/gateway/run_turn_runner.py b/gateway/run_turn_runner.py
+index 2a804508..673cf635 100644
+--- a/gateway/run_turn_runner.py
++++ b/gateway/run_turn_runner.py
+@@ -35,6 +35,21 @@ if TYPE_CHECKING:  # string annotations only; never imported at runtime (cycle)
+ logger = logging.getLogger("gateway.run")
+ 
+ 
++def _effective_turn_max_iterations(configured: int, override: Optional[int]) -> int:
++    """Clamp a per-turn iteration override without ever widening the configured budget."""
++    try:
++        base = max(1, int(configured))
++    except Exception:
++        base = 1
++    if override is None:
++        return base
++    try:
++        cap = max(1, int(override))
++    except Exception:
++        return base
++    return min(base, cap)
++
++
+ class _ExecApprovalDeclined(RuntimeError):
+     """The connector refused the approval card's destination.
+ 
+@@ -1716,7 +1731,14 @@ class TurnRunner:
+         # removing this in-process gateway write does not affect any of them.
+         platform_key = "cli" if ctx.source.platform == Platform.LOCAL else ctx.source.platform.value
+         combined_ephemeral = self._combined_ephemeral_prompt()
+-        max_iterations = _current_max_iterations()
++        max_iterations = _effective_turn_max_iterations(
++            _current_max_iterations(), getattr(ctx, "max_iterations_override", None)
++        )
++        if getattr(ctx, "max_iterations_override", None) is not None:
++            logger.info(
++                "Per-turn iteration cap active: configured=%s effective=%s session=%s",
++                _current_max_iterations(), max_iterations, ctx.session_key or "",
++            )
+         try:
+             model, runtime_kwargs = runner._resolve_session_agent_runtime(
+                 source=ctx.source, session_key=ctx.session_key, user_config=ctx.user_config,
+diff --git a/gateway/turn_context.py b/gateway/turn_context.py
+index aa2ce650..f0901057 100644
+--- a/gateway/turn_context.py
++++ b/gateway/turn_context.py
+@@ -44,6 +44,7 @@ class TurnContext:
+     session_id: Optional[str] = None
+     session_key: Optional[str] = None
+     run_generation: Optional[int] = None
++    max_iterations_override: Optional[int] = None
+     process_task_id: str = ""
+     process_baseline: frozenset[str] = field(default_factory=frozenset)
+     _interrupt_depth: int = 0
+diff --git a/tests/gateway/test_exocortex_control_turn_policy.py b/tests/gateway/test_exocortex_control_turn_policy.py
+new file mode 100644
+index 00000000..724d6df2
+--- /dev/null
++++ b/tests/gateway/test_exocortex_control_turn_policy.py
+@@ -0,0 +1,41 @@
++from gateway.run_turn import _exocortex_control_turn_policy
++from gateway.run_turn_runner import _effective_turn_max_iterations
++
++
++def _cfg(enabled=True):
++    return {"agent": {"interactive_control_contract": "exocortex" if enabled else "other"}}
++
++
++def test_status_control_turn_is_exact_and_capped():
++    kind, cap, note = _exocortex_control_turn_policy("  Status?!  ", _cfg())
++    assert kind == "status"
++    assert cap == 3
++    assert "Observational only" in note
++    assert "Do not restart services" in note
++
++
++def test_next_and_proceed_control_turns():
++    kind, cap, note = _exocortex_control_turn_policy("What's next?", _cfg())
++    assert (kind, cap) == ("what_next", 3)
++    assert "do not execute it" in note
++
++    kind, cap, note = _exocortex_control_turn_policy("Proceed.", _cfg())
++    assert (kind, cap) == ("proceed", 3)
++    assert "durable bounded-worker intent" in note
++
++
++def test_compound_messages_do_not_trigger_control_turn_policy():
++    assert _exocortex_control_turn_policy("Status and fix anything broken", _cfg()) == (None, None, None)
++    assert _exocortex_control_turn_policy("Proceed with PR 815 and merge it", _cfg()) == (None, None, None)
++
++
++def test_policy_is_profile_opt_in():
++    assert _exocortex_control_turn_policy("Status", _cfg(False)) == (None, None, None)
++    assert _exocortex_control_turn_policy("Status", {}) == (None, None, None)
++
++
++def test_iteration_override_only_clamps():
++    assert _effective_turn_max_iterations(60, 3) == 3
++    assert _effective_turn_max_iterations(2, 3) == 2
++    assert _effective_turn_max_iterations(60, None) == 60
++    assert _effective_turn_max_iterations(60, 0) == 1
+-- 
+2.53.0
+

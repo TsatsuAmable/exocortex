@@ -23,7 +23,7 @@ A recovered Exocortex is accepted only when behaviour, authority, and persistenc
 ## GSV Aineko / Hermes
 
 - [ ] Hermes runs at the selected tested/pinned version.
-- [ ] `apply_hermes_patches.py --verify` confirms the Exocortex context-safe fallback patch is present.
+- [ ] `apply_hermes_patches.py --verify` confirms the full ordered Exocortex Hermes patch set is present.
 - [ ] `install_profile.py --check` passes.
 - [ ] Active personality is `exocortex`.
 - [ ] Skill index exposes all five Exocortex skills.
