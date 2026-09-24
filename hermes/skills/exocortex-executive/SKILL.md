@@ -69,7 +69,10 @@ surrounding whitespace, and terminal punctuation:
 - **STATUS** — `status`, `status?`, `what is the status?`, `what's the status?`,
   and similarly unambiguous status-only wording are observational turns. Inspect
   enough durable/live state to answer and stop. Target **1–3 model/tool rounds**.
-  Do **not** restart services, edit files/config, write or merge git state, send
+  Batch independent read-only checks in the same round. Any mutable fact stated as
+  current (for example git HEAD/PR state, service health, queue state, or attention
+  items) must be observed in this turn; otherwise label it explicitly as last-known
+  or omit it. Do **not** restart services, edit files/config, write or merge git state, send
   messages, install software, or perform discovered remediation inside the
   status turn. The sole permitted operational write is submitting a durable
   remediation intent to GOMS for later bounded execution. Report that handoff

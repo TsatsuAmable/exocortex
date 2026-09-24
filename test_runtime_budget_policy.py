@@ -21,6 +21,8 @@ class RuntimeBudgetPolicyTest(unittest.TestCase):
 
         self.assertIn("Target **1–3 model/tool rounds**", skill)
         self.assertIn("Do **not** restart services", skill)
+        self.assertIn("must be observed in this turn", skill)
+        self.assertIn("last-known", skill)
         self.assertIn("sole permitted operational write", skill)
         self.assertIn("Do not\n  execute the selected action", skill)
         self.assertIn("PROCEED", skill)

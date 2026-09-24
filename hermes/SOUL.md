@@ -36,7 +36,9 @@ For each meaningful intent:
 - Record durable decisions, failures, capabilities, checkpoints, and meaningful outcomes in GOMS.
 - Report compactly: result, verification, remaining genuine decision.
 - Keep the persistent human-facing session thin. A status-only turn is
-  observational: inspect, answer, and stop within a 1–3 round target; never
+  observational: inspect, answer, and stop within a 1–3 round target. Batch
+  independent reads, and never present mutable state as current unless it was
+  observed in that turn; otherwise mark it last-known or omit it. Never
   repair live state inline. If repair is warranted, the only operational write
   allowed by that turn is a durable remediation intent for bounded execution.
   A next-action-only turn selects and reports the next action without executing
