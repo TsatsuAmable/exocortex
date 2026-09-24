@@ -1,15 +1,3 @@
-From ec7ac92639acafba7e8eb2e52f77a2164d601265 Mon Sep 17 00:00:00 2001
-From: tsatsuamable <huyleraineko@gmail.com>
-Date: Wed, 23 Sep 2026 05:07:14 +0100
-Subject: [PATCH] fix: preserve context across provider fallback
-
----
- agent/chat_completion_helpers.py              | 88 +++++++++++++++----
- agent/turn_api_error.py                       |  4 +-
- agent/turn_recovery.py                        | 11 ++-
- .../test_compressor_fallback_update.py        | 66 ++++++++++++++
- 4 files changed, 148 insertions(+), 21 deletions(-)
-
 diff --git a/agent/chat_completion_helpers.py b/agent/chat_completion_helpers.py
 index b9cf6a1d..0489cb60 100644
 --- a/agent/chat_completion_helpers.py
@@ -139,42 +127,109 @@ index b9cf6a1d..0489cb60 100644
              _rescope_fallback_extra_body(agent, old_model, old_provider, old_base_url)
              rewrite_prompt_model_identity(agent, fb_model, fb_provider)
 diff --git a/agent/turn_api_error.py b/agent/turn_api_error.py
-index 305570c8..912984f7 100644
+index 305570c8..0f7801ee 100644
 --- a/agent/turn_api_error.py
 +++ b/agent/turn_api_error.py
-@@ -309,7 +309,7 @@ def settle_unrecovered_error(
+@@ -51,8 +51,9 @@ class ApiErrorVerdict:
+ def handle_api_error(
+     agent: Any, *, api_error: Any, _retry: Any, thinking_spinner: Any, messages: Any,
+     api_messages: Any, api_kwargs: Any, system_message: Any, active_system_prompt: Any,
+-    conversation_history: Any, approx_tokens: Any, retry_count: Any, max_retries: Any,
+-    compression_attempts: Any, max_compression_attempts: Any, api_call_count: Any,
++    conversation_history: Any, approx_tokens: Any, request_pressure_tokens: Any,
++    retry_count: Any, max_retries: Any, compression_attempts: Any,
++    max_compression_attempts: Any, api_call_count: Any,
+     api_request_id: Any, api_start_time: Any, effective_task_id: Any, turn_id: Any,
+ ) -> ApiErrorVerdict:
+     """Recover from ``api_error`` in the original order. Every fallback activation must leave
+@@ -160,7 +161,7 @@ def handle_api_error(
+         active_system_prompt=active_system_prompt, conversation_history=conversation_history,
+         retry_count=retry_count, max_retries=max_retries, compression_attempts=compression_attempts,
+         max_compression_attempts=max_compression_attempts, api_call_count=api_call_count,
+-        effective_task_id=effective_task_id,
++        effective_task_id=effective_task_id, request_pressure_tokens=request_pressure_tokens,
+     )
+     status_code = _ce.status_code
+     messages = _ce.messages
+@@ -204,6 +205,7 @@ def handle_api_error(
+         _provider=_provider, _base=_base, _model=_model, messages=messages,
+         api_messages=api_messages, api_kwargs=api_kwargs, active_system_prompt=active_system_prompt,
+         conversation_history=conversation_history, approx_tokens=approx_tokens,
++        request_pressure_tokens=request_pressure_tokens,
+         retry_count=retry_count, max_retries=max_retries, compression_attempts=compression_attempts,
+         api_call_count=api_call_count,
+     )
+@@ -251,8 +253,9 @@ def settle_unrecovered_error(
+     agent: Any, *, api_error: Any, classified: Any, _retry: Any, status_code: Any, error_msg: Any,
+     is_context_length_error: Any, is_rate_limited: Any, _is_zai_coding_overload: Any,
+     _provider: Any, _base: Any, _model: Any, messages: Any, api_messages: Any, api_kwargs: Any,
+-    active_system_prompt: Any, conversation_history: Any, approx_tokens: Any, retry_count: Any,
+-    max_retries: Any, compression_attempts: Any, api_call_count: Any,
++    active_system_prompt: Any, conversation_history: Any, approx_tokens: Any,
++    request_pressure_tokens: Any, retry_count: Any, max_retries: Any,
++    compression_attempts: Any, api_call_count: Any,
+ ) -> UnrecoveredErrorVerdict:
+     """Decide the fate of an API error that every recovery chain declined: local validation /
+     non-retryable client errors (Copilot stale-credential self-heal first, then fallback, then a
+@@ -269,6 +272,13 @@ def settle_unrecovered_error(
+             compression_attempts=compression_attempts, result=result,
+         )
+ 
++    fallback_pressure_tokens = (
++        request_pressure_tokens
++        if isinstance(request_pressure_tokens, int) and not isinstance(request_pressure_tokens, bool)
++        and request_pressure_tokens > 0
++        else approx_tokens
++    )
++
+     # ``FailoverReason.billing`` (402) is deliberately NOT excluded: pool rotation and
+     # eager fallback already gave up, so retrying only burns paid requests on a depleted
+     # balance. Mirrors 401/403.
+@@ -309,7 +319,7 @@ def settle_unrecovered_error(
          if agent._has_pending_fallback():
              _label = _NONRETRYABLE_LABELS.get(classified.reason, f"Non-retryable error (HTTP {status_code})")
              agent._buffer_status(f"⚠️ {_label} — trying fallback...")
 -        if agent._try_activate_fallback():
-+        if agent._try_activate_fallback(required_context_tokens=approx_tokens):
++        if agent._try_activate_fallback(required_context_tokens=fallback_pressure_tokens):
              # Direct ``return _verdict("break")`` is load-bearing: the restart handler
              # re-runs the pre-API preflight against the fallback's context window.
              active_system_prompt = _arm_fallback_restart(agent, api_messages, active_system_prompt, _retry)
-@@ -338,7 +338,7 @@ def settle_unrecovered_error(
+@@ -338,7 +348,7 @@ def settle_unrecovered_error(
              return _verdict("continue")
          if agent._has_pending_fallback():
              agent._buffer_status(f"⚠️ Max retries ({max_retries}) exhausted — trying fallback...")
 -        if agent._try_activate_fallback():
-+        if agent._try_activate_fallback(required_context_tokens=approx_tokens):
++        if agent._try_activate_fallback(required_context_tokens=fallback_pressure_tokens):
              # Direct ``return _verdict("break")`` is load-bearing: the restart handler
              # re-runs the pre-API preflight against the fallback's context window.
              active_system_prompt = _arm_fallback_restart(agent, api_messages, active_system_prompt, _retry)
 diff --git a/agent/turn_recovery.py b/agent/turn_recovery.py
-index 38019505..f73ab33d 100644
+index 38019505..1b5eb891 100644
 --- a/agent/turn_recovery.py
 +++ b/agent/turn_recovery.py
-@@ -1397,6 +1397,9 @@ def route_classified_error(
+@@ -1280,7 +1280,7 @@ def route_classified_error(
+     messages: List[Dict[str, Any]], api_messages: Any, system_message: Any,
+     active_system_prompt: Any, conversation_history: Any, retry_count: int, max_retries: int,
+     compression_attempts: int, max_compression_attempts: int, api_call_count: int,
+-    effective_task_id: Any,
++    effective_task_id: Any, request_pressure_tokens: Any,
+ ) -> ClassifiedErrorVerdict:
+     """Ordered (load-bearing) recovery steps between classification and overflow handling:
+     compaction-disabled overflow → terminal error (output-cap errors exempt); Anthropic
+@@ -1397,6 +1397,12 @@ def route_classified_error(
          if classified.reason == FailoverReason.rate_limit else None
      )
      _is_transport_failure = classified.reason in _TRANSPORT_FAILURE_REASONS
-+    _required_fallback_tokens = estimate_request_tokens_rough(
-+        api_messages, tools=agent.tools or None
++    _required_fallback_tokens = (
++        request_pressure_tokens
++        if isinstance(request_pressure_tokens, int) and not isinstance(request_pressure_tokens, bool)
++        and request_pressure_tokens > 0
++        else estimate_request_tokens_rough(api_messages, tools=agent.tools or None)
 +    )
      # Z.AI overload 429s classify `overloaded`, which `is_rate_limited` excludes. Detect
      # directly so the long backoff runs, and raise the ceiling to reach it.
      _is_zai_coding_overload = is_zai_coding_overload_error(base_url=str(base_url), model=model, error=api_error)
-@@ -1416,7 +1419,9 @@ def route_classified_error(
+@@ -1416,7 +1422,9 @@ def route_classified_error(
          )
          if not pool_may_recover:
              agent._buffer_status(_eager_fallback_status(classified, _is_upstream, _is_transport_failure))
@@ -185,7 +240,7 @@ index 38019505..f73ab33d 100644
                  return _fallback_break()
  
      # A 401/403 surviving credential refresh means a broken credential or endpoint:
-@@ -1431,7 +1436,9 @@ def route_classified_error(
+@@ -1431,7 +1439,9 @@ def route_classified_error(
              "🔐 Authentication failed and could not be refreshed — "
              "switching to fallback provider..."
          )
@@ -270,6 +325,122 @@ index a5ff87a6..465f715a 100644
 +
 +    assert agent._try_activate_fallback(required_context_tokens=80_000) is True
 +    assert agent._ollama_num_ctx == 131_072
--- 
-2.53.0
-
+diff --git a/tests/run_agent/test_fallback_request_pressure.py b/tests/run_agent/test_fallback_request_pressure.py
+new file mode 100644
+index 00000000..596f2a09
+--- /dev/null
++++ b/tests/run_agent/test_fallback_request_pressure.py
+@@ -0,0 +1,113 @@
++from types import SimpleNamespace
++from unittest.mock import patch
++
++from agent.error_classifier import FailoverReason
++from agent.turn_api_error import settle_unrecovered_error
++from agent.turn_recovery import route_classified_error
++
++
++class _Agent:
++    provider = "custom"
++    model = "primary"
++    base_url = "http://127.0.0.1:11434/v1"
++    compression_enabled = True
++    tools = []
++    _fallback_index = 0
++    _fallback_chain = [{"provider": "custom", "model": "small"}]
++    _credential_pool = None
++
++    def __init__(self):
++        self.seen_required_tokens = []
++        self.status = []
++
++    def _has_pending_fallback(self):
++        return True
++
++    def _buffer_status(self, message):
++        self.status.append(message)
++
++    def _try_activate_fallback(self, reason=None, required_context_tokens=None):
++        self.seen_required_tokens.append(required_context_tokens)
++        return True
++
++
++def _classified(reason=FailoverReason.unknown, *, retryable=False):
++    return SimpleNamespace(
++        reason=reason,
++        retryable=retryable,
++        should_compress=False,
++        is_auth=False,
++    )
++
++
++def test_nonretryable_fallback_uses_authoritative_request_pressure():
++    agent = _Agent()
++    retry = SimpleNamespace(copilot_stale_cred_retry_attempted=False)
++    error = SimpleNamespace(status_code=400)
++
++    with patch("agent.conversation_loop._arm_fallback_restart", return_value="sys"):
++        verdict = settle_unrecovered_error(
++            agent,
++            api_error=error,
++            classified=_classified(),
++            _retry=retry,
++            status_code=400,
++            error_msg="bad request",
++            is_context_length_error=False,
++            is_rate_limited=False,
++            _is_zai_coding_overload=False,
++            _provider="custom",
++            _base=agent.base_url,
++            _model=agent.model,
++            messages=[],
++            api_messages=[{"role": "user", "content": "x"}],
++            api_kwargs={},
++            active_system_prompt="sys",
++            conversation_history=[],
++            approx_tokens=30_000,
++            request_pressure_tokens=121_481,
++            retry_count=1,
++            max_retries=3,
++            compression_attempts=0,
++            api_call_count=1,
++        )
++
++    assert verdict.action == "break"
++    assert agent.seen_required_tokens == [121_481]
++
++
++def test_eager_fallback_uses_authoritative_request_pressure():
++    agent = _Agent()
++    retry = SimpleNamespace(auth_failover_attempted=False)
++    error = SimpleNamespace(status_code=429)
++
++    with (
++        patch("agent.conversation_loop._arm_fallback_restart", return_value="sys"),
++        patch("run_agent._pool_may_recover_from_rate_limit", return_value=False),
++    ):
++        verdict = route_classified_error(
++            agent,
++            error,
++            _classified(FailoverReason.rate_limit, retryable=True),
++            retry,
++            error_msg="rate limit",
++            error_context=None,
++            recovered_with_pool=False,
++            base_url=agent.base_url,
++            model=agent.model,
++            messages=[],
++            api_messages=[{"role": "user", "content": "x"}],
++            system_message="",
++            active_system_prompt="sys",
++            conversation_history=[],
++            retry_count=1,
++            max_retries=3,
++            compression_attempts=0,
++            max_compression_attempts=3,
++            api_call_count=1,
++            effective_task_id=None,
++            request_pressure_tokens=121_481,
++        )
++
++    assert verdict.action == "break"
++    assert agent.seen_required_tokens == [121_481]
