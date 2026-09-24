@@ -40,6 +40,7 @@ REQUIRED = [
     "hermes/install_profile.py",
     "hermes/apply_hermes_patches.py",
     "hermes/patches/context-safe-main-fallback.patch",
+    "hermes/patches/exocortex-control-turn-hard-guard.patch",
     "docs/reconstruction/REBUILD_FROM_GITHUB.md",
     "docs/reconstruction/STATE_AND_SECRETS.md",
     "docs/reconstruction/ACCEPTANCE_CHECKLIST.md",

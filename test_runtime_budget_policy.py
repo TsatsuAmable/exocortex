@@ -8,6 +8,7 @@ class RuntimeBudgetPolicyTest(unittest.TestCase):
     def test_gsvaineko_fragment_has_execution_brakes(self):
         text = (ROOT / "config/hermes.gsvaineko.fragment.yaml").read_text()
         self.assertIn("max_turns: 60", text)
+        self.assertIn("interactive_control_contract: exocortex", text)
         self.assertIn("max_iterations: 30", text)
         self.assertIn("max_tool_calls: 20", text)
         self.assertIn("hard_stop_enabled: true", text)
@@ -41,6 +42,7 @@ class RuntimeBudgetPolicyTest(unittest.TestCase):
     def test_profile_installer_enforces_same_budget(self):
         installer = (ROOT / "hermes/install_profile.py").read_text()
         self.assertIn('agent["max_turns"] = 60', installer)
+        self.assertIn('agent["interactive_control_contract"] = "exocortex"', installer)
         self.assertIn('data.setdefault("delegation", {})["max_iterations"] = 30', installer)
         self.assertIn('guard["hard_stop_enabled"] = True', installer)
 

@@ -29,6 +29,7 @@ terminal:
 
 agent:
   max_turns: 60
+  interactive_control_contract: exocortex
   reasoning_effort: medium
   verbose: false
   personalities:

@@ -90,6 +90,7 @@ def update_personality_config(profile):
         data.setdefault("model", {}).pop("context_length", None)
         agent = data.setdefault("agent", {})
         agent["max_turns"] = 60
+        agent["interactive_control_contract"] = "exocortex"
         personalities = agent.setdefault("personalities", {})
         personalities["exocortex"] = PERSONALITY_OVERLAY
         data.setdefault("delegation", {})["max_iterations"] = 30
