@@ -16,10 +16,25 @@ class RuntimeBudgetPolicyTest(unittest.TestCase):
     def test_interactive_session_routes_sustained_work(self):
         skill = (ROOT / "hermes/skills/exocortex-executive/SKILL.md").read_text()
         soul = (ROOT / "hermes/SOUL.md").read_text()
-        self.assertIn("normally finish within six", skill)
-        self.assertIn("approved-intent bounded worker path", skill)
-        self.assertIn("persistent human-facing session thin", soul)
+        fragment = (ROOT / "config/hermes.gsvaineko.fragment.yaml").read_text()
+        installer = (ROOT / "hermes/install_profile.py").read_text()
+
+        self.assertIn("Target **1–3 model/tool rounds**", skill)
+        self.assertIn("Do **not** restart services", skill)
+        self.assertIn("sole permitted operational write", skill)
+        self.assertIn("Do not\n  execute the selected action", skill)
+        self.assertIn("PROCEED", skill)
+        self.assertIn("approved-intent bounded worker", skill)
+
+        self.assertIn("status-only turn is\n  observational", soul)
+        self.assertIn("next-action-only turn selects", soul)
+        self.assertIn("`Proceed` executes", soul)
         self.assertIn("repeated no-progress tool calls as a fault condition", soul)
+
+        self.assertIn("Status-only turns are observational", fragment)
+        self.assertIn("Next-action-only turns select", fragment)
+        self.assertIn("Status-only turns are observational", installer)
+        self.assertIn("Next-action-only turns select", installer)
 
     def test_profile_installer_enforces_same_budget(self):
         installer = (ROOT / "hermes/install_profile.py").read_text()
