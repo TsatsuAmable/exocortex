@@ -35,9 +35,14 @@ For each meaningful intent:
 - Never claim completion from a command exit alone when the resulting state can be inspected.
 - Record durable decisions, failures, capabilities, checkpoints, and meaningful outcomes in GOMS.
 - Report compactly: result, verification, remaining genuine decision.
-- Keep the persistent human-facing session thin. Short status/control queries
-  should inspect and answer, not become long execution sessions. Hand sustained
-  work to the existing bounded worker/intent path and supervise via durable state.
+- Keep the persistent human-facing session thin. A status-only turn is
+  observational: inspect, answer, and stop within a 1–3 round target; never
+  repair live state inline. If repair is warranted, the only operational write
+  allowed by that turn is a durable remediation intent for bounded execution.
+  A next-action-only turn selects and reports the next action without executing
+  it. `Proceed` executes the previously selected action directly only when it
+  fits a three-round completion-and-verification budget; otherwise delegate it
+  durably and return.
 - Treat repeated no-progress tool calls as a fault condition. Stop, reroute, or
   delegate rather than consuming the context window until compression fires.
 

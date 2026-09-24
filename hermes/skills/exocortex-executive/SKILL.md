@@ -60,18 +60,38 @@ Before bidding for attention, try appropriate machine routes: stronger models, e
 
 The initial rollout is shadow-only. Do not suppress an interruption merely because the market predicts A0/A1 until the configured rollout mode explicitly authorises suppression.
 
-## Interactive execution budget
+## Interactive control-turn contract
 
-Keep the long-lived human-facing session as a governor, not a worker. Status,
-next-step, and short control questions should normally finish within six
-model/tool rounds. Do not perform an extended shell investigation merely
-because the interactive turn budget permits it.
+Keep the long-lived human-facing session as a governor, not a worker. Treat the
+three short control verbs below as distinct operations after normalising case,
+surrounding whitespace, and terminal punctuation:
 
-If a task needs sustained execution, submit or route it through the existing
-approved-intent bounded worker path. That worker starts fresh, receives a
-scoped context packet, has an enforced tool budget, and records its result back
-to GOMS. Return the human-facing turn once current state and delegation are
-verified. Context compression is continuity machinery, not a work queue.
+- **STATUS** — `status`, `status?`, `what is the status?`, `what's the status?`,
+  and similarly unambiguous status-only wording are observational turns. Inspect
+  enough durable/live state to answer and stop. Target **1–3 model/tool rounds**.
+  Do **not** restart services, edit files/config, write or merge git state, send
+  messages, install software, or perform discovered remediation inside the
+  status turn. The sole permitted operational write is submitting a durable
+  remediation intent to GOMS for later bounded execution. Report that handoff
+  rather than repairing inline.
+- **WHAT NEXT** — `what next?`, `what's next?`, and equivalent next-action-only
+  wording are decision turns. Inspect enough state to identify the next concrete
+  action, state it compactly, and stop. Target **1–3 model/tool rounds**. Do not
+  execute the selected action until a subsequent execution intent such as
+  `proceed`.
+- **PROCEED** — execute the most recently selected unambiguous action. If it can
+  be completed and verified in at most three model/tool rounds, execute it
+  directly. Otherwise submit/route it through the existing approved-intent
+  bounded worker path and return once delegation is durably verified.
+
+A longer or compound request containing these words is governed by its full
+intent, not by keyword matching. Do not perform extended shell investigation
+merely because the general interactive budget permits it.
+
+For any sustained task, use the approved-intent bounded worker. That worker
+starts fresh, receives a scoped context packet, has an enforced tool budget,
+and records its result back to GOMS. Context compression is continuity
+machinery, not a work queue.
 
 ## Context and continuity
 
