@@ -39,6 +39,7 @@ class RuntimeBudgetPolicyTest(unittest.TestCase):
         self.assertIn("Status-only turns are observational", installer)
         self.assertIn("Next-action-only turns select", installer)
         self.assertIn('"what now"', (ROOT / "hermes/patches/exocortex-control-turn-hard-guard.patch").read_text())
+        self.assertIn("request_pressure_tokens=request_pressure_tokens", (ROOT / "hermes/patches/context-safe-main-fallback.patch").read_text())
 
     def test_profile_installer_enforces_same_budget(self):
         installer = (ROOT / "hermes/install_profile.py").read_text()
