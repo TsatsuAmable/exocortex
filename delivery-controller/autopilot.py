@@ -35,6 +35,8 @@ def check_state(pr):
     return failed,pending
 
 def classify(repo,pr):
+    if not (pr.get('statusCheckRollup') or []):
+        return 'WAIT_CI',['checks-not-reported']
     failed,pending=check_state(pr)
     if pending: return 'WAIT_CI',pending
     if failed:
