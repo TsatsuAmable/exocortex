@@ -7,6 +7,7 @@ import argparse
 import fcntl
 import json
 import os
+import secrets
 import socket
 import subprocess
 import tempfile
@@ -116,6 +117,43 @@ def _parse_output(text: str) -> dict:
     return value
 
 
+def _run_hermes_cli(python: Path, hermes_agent_home: Path, args: list[str], *,
+                    timeout: int = 60) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [str(python), "-m", "hermes_cli.main", *args],
+        cwd=str(hermes_agent_home), text=True, capture_output=True,
+        timeout=max(10, int(timeout)), env=os.environ.copy(),
+    )
+
+
+def _create_bounded_profile(python: Path, hermes_agent_home: Path,
+                            source_profile: str, max_tool_calls: int) -> str:
+    # Hermes 2026.9 moved max-turn control out of the top-level CLI. Clone the
+    # current Aineko profile into an isolated short-lived worker profile and set
+    # its authoritative agent.max_turns instead of mutating the governor profile.
+    name = f"ainekoworker{os.getpid()}{secrets.token_hex(3)}"
+    created = _run_hermes_cli(
+        python, hermes_agent_home,
+        ["profile", "create", name, "--clone-from", source_profile, "--no-alias"],
+    )
+    if created.returncode != 0:
+        raise RuntimeError(
+            "bounded_profile_create_failed:" + (created.stderr.strip() or created.stdout.strip()))
+    configured = _run_hermes_cli(
+        python, hermes_agent_home,
+        ["--profile", name, "config", "set", "agent.max_turns", str(int(max_tool_calls))],
+    )
+    if configured.returncode != 0:
+        _run_hermes_cli(python, hermes_agent_home, ["profile", "delete", name, "--yes"])
+        raise RuntimeError(
+            "bounded_profile_config_failed:" + (configured.stderr.strip() or configured.stdout.strip()))
+    return name
+
+
+def _delete_bounded_profile(python: Path, hermes_agent_home: Path, profile: str) -> None:
+    _run_hermes_cli(python, hermes_agent_home, ["profile", "delete", profile, "--yes"])
+
+
 def run_worker(packet: dict, *, profile: str, timeout_seconds: int,
                max_tool_calls: int, hermes_agent_home: Path) -> tuple[dict, dict]:
     python = hermes_agent_home / "venv" / "bin" / "python"
@@ -123,11 +161,13 @@ def run_worker(packet: dict, *, profile: str, timeout_seconds: int,
         raise FileNotFoundError(f"Hermes Python not found: {python}")
     fd, usage_name = tempfile.mkstemp(prefix="aineko-worker-", suffix=".usage.json")
     os.close(fd)
+    worker_profile: str | None = None
     try:
+        worker_profile = _create_bounded_profile(
+            python, hermes_agent_home, profile, max_tool_calls)
         proc = subprocess.run(
-            [str(python), "-m", "hermes_cli.main", "--profile", profile,
-             "--ignore-rules", "--max-turns", str(int(max_tool_calls)),
-             "--usage-file", usage_name, "--oneshot",
+            [str(python), "-m", "hermes_cli.main", "--profile", worker_profile,
+             "--ignore-rules", "--usage-file", usage_name, "--oneshot",
              build_worker_prompt(packet, max_tool_calls)],
             cwd=str(hermes_agent_home), text=True, capture_output=True,
             timeout=max(30, int(timeout_seconds)), env=os.environ.copy(),
@@ -156,6 +196,12 @@ def run_worker(packet: dict, *, profile: str, timeout_seconds: int,
                 "evidence_summary": "Worker final output was not parseable; reconcile before retrying.",
             }, usage
     finally:
+        if worker_profile:
+            try:
+                _delete_bounded_profile(python, hermes_agent_home, worker_profile)
+            except Exception:
+                # A cleanup failure must not overwrite a verified worker result.
+                pass
         Path(usage_name).unlink(missing_ok=True)
 
 
