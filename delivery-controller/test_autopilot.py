@@ -24,8 +24,14 @@ class T(unittest.TestCase):
         with patch('autopilot.run',return_value=cp):
             self.assertEqual(autopilot.classify('o/r',pr)[0],'INFRA_FAILURE')
 
+    def test_no_checks_reported_waits_for_ci_registration(self):
+        state,detail=autopilot.classify('o/r',{'statusCheckRollup':[],'mergeStateStatus':'CLEAN'})
+        self.assertEqual(state,'WAIT_CI')
+        self.assertEqual(detail,['checks-not-reported'])
+
     def test_green_is_merge_ready(self):
-        self.assertEqual(autopilot.classify('o/r',{'statusCheckRollup':[],'mergeStateStatus':'CLEAN'})[0],'MERGE_READY')
+        pr={'statusCheckRollup':[{'name':'unit','conclusion':'SUCCESS'}],'mergeStateStatus':'CLEAN'}
+        self.assertEqual(autopilot.classify('o/r',pr)[0],'MERGE_READY')
 
     def test_remediation_creates_approved_durable_intent(self):
         svc=FakeService()
