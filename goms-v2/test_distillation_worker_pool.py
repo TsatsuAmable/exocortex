@@ -101,16 +101,25 @@ class ProviderBrokerTests(unittest.TestCase):
         self.assertTrue(all(x.providers for x in lanes))
 
 
-    def test_default_provider_chain_uses_shared_router_and_drains_retiring_deepseek(self):
-        lanes=worker_pool.default_lane_specs()
+    def test_default_provider_chain_preserves_shared_router_order(self):
+        ranked = [
+            {'candidate':'glm','adapter':'ollama','model':'glm-5.3-flash:cloud','network':True},
+            {'candidate':'deepseek','adapter':'ollama','model':'deepseek-v4-flash:cloud','network':True},
+            {'candidate':'local','adapter':'ollama','model':'gsvaineko-core:v1','network':False},
+        ]
+        with mock.patch.object(worker_pool, 'rank_models', return_value=ranked):
+            lanes=worker_pool.default_lane_specs()
         self.assertEqual(len(lanes),3)
         for lane in lanes:
             self.assertEqual(lane.providers[0].model,'glm-5.3-flash:cloud')
             self.assertTrue(lane.providers[0].remote)
             self.assertTrue(any(not p.remote for p in lane.providers))
             models=[p.model for p in lane.providers]
-            self.assertIn('deepseek-v4-flash:cloud',models)
-            self.assertGreater(models.index('deepseek-v4-flash:cloud'),0)
+            self.assertEqual(models[:3], [
+                'glm-5.3-flash:cloud',
+                'deepseek-v4-flash:cloud',
+                'gsvaineko-core:v1',
+            ])
 
     def test_normal_chatgpt_segment_allows_remote_provider(self):
         self.assertTrue(worker_pool.segment_allows_remote({'content':'ordinary project discussion','privacy':None}))
