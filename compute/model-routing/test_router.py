@@ -36,13 +36,22 @@ class LifecycleTests(unittest.TestCase):
 
 class FleetRoutingTests(unittest.TestCase):
     def test_goms_cold_start_prefers_active_qualified_nonretiring_model(self):
-        rows = router.rank_candidates({
-            "prompt": "Extract durable semantic state as JSON",
-            "family": "goms-distillation",
-            "privacy": "non_sensitive",
-            "mode": "direct",
-            "context": 8192,
-        })
+        # This scenario verifies pre-retirement drain ordering, not today's fleet
+        # state. Freeze lifecycle evaluation before the candidate's retire_at so
+        # the test remains valid after 2026-09-25.
+        lifecycle_state = router.lifecycle_state
+        fixed_now = datetime(2026, 9, 20, tzinfo=timezone.utc)
+        with mock.patch.object(
+            router, "lifecycle_state",
+            side_effect=lambda candidate, now=None: lifecycle_state(candidate, now=fixed_now),
+        ):
+            rows = router.rank_candidates({
+                "prompt": "Extract durable semantic state as JSON",
+                "family": "goms-distillation",
+                "privacy": "non_sensitive",
+                "mode": "direct",
+                "context": 8192,
+            })
         self.assertTrue(rows)
         self.assertEqual(rows[0]["model"], "glm-5.3-flash:cloud")
         retiring = next(x for x in rows if x["model"] == "deepseek-v4-flash:cloud")
