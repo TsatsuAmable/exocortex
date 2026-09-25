@@ -5,7 +5,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from aineko_worker_dispatcher import build_context_packet, dispatch_once, run_worker
+from aineko_worker_dispatcher import (
+    _create_bounded_profile, build_context_packet, dispatch_once, run_worker,
+)
 from control_intents import ControlIntentService
 from goms_store import GomsStore
 
@@ -70,7 +72,26 @@ class BoundedWorkerTests(unittest.TestCase):
         self.assertEqual(intent["outcome"]["result"]["success_downgraded"],
                          "missing_verification")
 
-    def test_worker_uses_native_hard_turn_cap(self):
+    def test_bounded_profile_sets_authoritative_turn_cap(self):
+        home = self.root / "hermes-agent"
+        python = home / "venv" / "bin" / "python"
+        python.parent.mkdir(parents=True)
+        python.write_text("")
+        completed = __import__("subprocess").CompletedProcess(
+            args=[], returncode=0, stdout="ok", stderr="")
+        with patch("aineko_worker_dispatcher._run_hermes_cli", return_value=completed) as cli, \
+             patch("aineko_worker_dispatcher.secrets.token_hex", return_value="abc123"), \
+             patch("aineko_worker_dispatcher.os.getpid", return_value=42):
+            profile = _create_bounded_profile(
+                python, home, "gsvaineko", max_tool_calls=7)
+        self.assertEqual(profile, "ainekoworker42abc123")
+        calls = [call.args[2] for call in cli.call_args_list]
+        self.assertEqual(calls[0], [
+            "profile", "create", profile, "--clone-from", "gsvaineko", "--no-alias"])
+        self.assertEqual(calls[1], [
+            "--profile", profile, "config", "set", "agent.max_turns", "7"])
+
+    def test_worker_uses_isolated_profile_without_retired_max_turns_flag(self):
         home = self.root / "hermes-agent"
         python = home / "venv" / "bin" / "python"
         python.parent.mkdir(parents=True)
@@ -81,12 +102,16 @@ class BoundedWorkerTests(unittest.TestCase):
                 "status": "SUCCESS", "result": {},
                 "verification": {"performed": True, "evidence": "ok"},
                 "evidence_title": "ok", "evidence_summary": "ok"}), stderr="")
-        with patch("aineko_worker_dispatcher.subprocess.run", return_value=completed) as proc:
+        with patch("aineko_worker_dispatcher._create_bounded_profile", return_value="ainekoworkertest"), \
+             patch("aineko_worker_dispatcher._delete_bounded_profile") as cleanup, \
+             patch("aineko_worker_dispatcher.subprocess.run", return_value=completed) as proc:
             run_worker(packet, profile="gsvaineko", timeout_seconds=30,
                        max_tool_calls=7, hermes_agent_home=home)
         argv = proc.call_args.args[0]
-        idx = argv.index("--max-turns")
-        self.assertEqual(argv[idx + 1], "7")
+        self.assertIn("--profile", argv)
+        self.assertEqual(argv[argv.index("--profile") + 1], "ainekoworkertest")
+        self.assertNotIn("--max-turns", argv)
+        cleanup.assert_called_once_with(python, home, "ainekoworkertest")
 
     def test_worker_receives_existing_claim_and_must_not_reclaim(self):
         intent_id = self.approved()
