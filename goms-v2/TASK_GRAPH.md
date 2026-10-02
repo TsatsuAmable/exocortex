@@ -30,6 +30,12 @@ Finish shared capability infrastructure before allowing project branches to mult
    - OpenCode free-model benchmark resumes only after routing harness exists.
    - Route by task class, privacy, latency, quality floor, and cost.
 
+4b. **Adaptive learned substrate / continual-learning experiment** — PLANNED
+   - Bounded P1 cognitive-fabric experiment; GOMS remains canonical and learned weights are derived/reconstructible.
+   - First tranche is architecture preflight + independent reproduction of mini-AGI's continual-learning result.
+   - Promotion requires measured value over retrieval-only baselines; learned output has no execution authority.
+   - Roadmap: [2026-10-02 Exocortex continual-learning roadmap](../docs/superpowers/plans/2026-10-02-exocortex-continual-learning-roadmap.md).
+
 5. **GSV Aineko identity reconstruction** — PARKED-READY
    - Depends on stable memory + runtime boundary.
    - Identity remains runtime-agnostic; Hermes is current candidate host.
