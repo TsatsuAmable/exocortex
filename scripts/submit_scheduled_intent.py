@@ -17,6 +17,15 @@ def _load_service(exocortex_home: Path):
     return ControlIntentService
 
 
+def _schedule_instance(period: str, *, now: datetime | None = None) -> str:
+    current = now or datetime.now().astimezone()
+    if period == "day":
+        return current.date().isoformat()
+    if period == "hour":
+        return current.strftime("%Y-%m-%dT%H")
+    raise ValueError(f"unsupported idempotency_period: {period}")
+
+
 def submit(spec_path: Path, *, exocortex_home: Path, goms_home: Path) -> dict:
     spec = json.loads(spec_path.read_text())
     required = {"id", "title", "summary", "instructions"}
@@ -26,7 +35,8 @@ def submit(spec_path: Path, *, exocortex_home: Path, goms_home: Path) -> dict:
 
     service_type = _load_service(exocortex_home)
     service = service_type(goms_home)
-    day_key = datetime.now().astimezone().date().isoformat()
+    idempotency_period = str(spec.get("idempotency_period", "day"))
+    schedule_instance = _schedule_instance(idempotency_period)
     job_id = str(spec["id"])
     return service.submit_intent(
         title=str(spec["title"]),
@@ -48,11 +58,12 @@ def submit(spec_path: Path, *, exocortex_home: Path, goms_home: Path) -> dict:
         },
         provenance={
             "scheduled_job_id": job_id,
-            "schedule_instance": day_key,
+            "schedule_instance": schedule_instance,
+            "idempotency_period": idempotency_period,
             "bounded_worker": True,
         },
         decision_required=True,
-        idempotency_key=f"schedule:{job_id}:{day_key}",
+        idempotency_key=f"schedule:{job_id}:{schedule_instance}",
         actor="system:schedule",
         human_attested=True,
         resolved_by="human:T",

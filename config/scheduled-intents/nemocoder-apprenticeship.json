@@ -1,0 +1,17 @@
+{
+  "id": "nemocoder-apprenticeship",
+  "title": "NemoCoder autonomous apprenticeship",
+  "summary": "Advance one bounded step of the local coding-specialist apprenticeship, preserving evaluation isolation, provenance, resource limits and Exocortex authority boundaries.",
+  "project": "Exocortex",
+  "priority": "P1",
+  "risk_tier": "normal",
+  "verification_policy": {
+    "require_real_outcome_check": true,
+    "require_tests_or_readback": true
+  },
+  "instructions": "Operate autonomously from docs/superpowers/plans/2026-10-03-nemocoder-autonomous-apprenticeship.md and docs/architecture/NEMOCODER.md. Use the Mac as controller, evaluation host and default inference host. Nemosyne is the first target repository but evaluation must use disposable immutable worktrees and must never mutate its canonical main. Acquire the NemoCoder singleton lease, inspect durable state, resume a safe interrupted stage or advance exactly one next dependency in NC0-NC11. Build the required tooling rather than relying on manual steps. Establish frozen evaluation before training. Keep the secret holdout inaccessible to corpus/training workers. Prefer GPT-OSS-20B as the first Ollama inference baseline, benchmark at least one smaller trainable model, and select models from measured evidence. Fine-tuning must use a trainer backend separate from Ollama serving. Apply promotion/regression gates exactly as pre-registered; training completion is never promotion. Persist corpus/model/eval provenance and hashes. Enforce memory/disk/thermal budgets and circuit breakers. Never weaken tests or governance, grant the model merge/scientific/security authority, expose secrets, or incur new paid spend outside existing policy. Record detailed machine-readable progress locally/GOMS; update Git only for durable source/evidence. User-facing updates occur on phase completion, material model promotion/rejection, blocker/cost decision, or approximately every six hours while active.",
+  "cron_schedule": "0 * * * *",
+  "cron_name": "NemoCoder apprenticeship",
+  "cron_wrapper": "cron_enqueue_nemocoder.sh",
+  "idempotency_period": "hour"
+}
